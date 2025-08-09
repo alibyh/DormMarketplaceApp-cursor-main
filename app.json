@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "Marsa",
+    "slug": "DormMarketplaceApp",
+    "version": "1.0.0",
+    "jsEngine": "jsc", 
+    "orientation": "portrait",
+    "icon": "./assets/S.F.U.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "scheme": "dormmarketplaceapp",
+    "splash": {
+      "image": "./assets/S.F.U.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.alibyh.DormMarketplaceApp",
+      "infoPlist": {
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+      },
+      "deploymentTarget": "15.1"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.yourcompany.dormmarketplace",
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with your friends."
+        }
+      ]
+    ],
+    "owner": "alibyh",
+    "extra": {
+      "eas": {
+        "projectId": "96eaf707-3dfe-43e9-9366-422ca68f6132"
+      }
+    }
+  }
+}

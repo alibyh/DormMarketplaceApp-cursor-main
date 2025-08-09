@@ -1,0 +1,16 @@
+# Exclude socket files
+*.sock
+
+# Exclude Expo files
+.expo/
+
+# Exclude node_modules
+node_modules/
+
+# Exclude cache files
+*.log
+.cache/
+
+# Exclude system files
+.DS_Store
+.vscode/

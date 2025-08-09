@@ -1,0 +1,12 @@
+diff --git a/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec b/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec
+index 1234567..89abcde 100644
+--- a/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec
++++ b/node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec
+@@ -41,7 +41,6 @@ Pod::Spec.new do |spec|
+   spec.ios.vendored_frameworks = "destroot/Library/Frameworks/universal/hermes.xcframework"
+   spec.tvos.vendored_frameworks = "destroot/Library/Frameworks/tvos/hermes.framework"
+   spec.osx.vendored_frameworks = "destroot/Library/Frameworks/macosx/hermes.framework"
+-  spec.visionos.vendored_frameworks = "destroot/Library/Frameworks/xros/hermes.framework"
+ 
+   spec.pod_target_xcconfig = {
+     "CLANG_CXX_LANGUAGE_STANDARD" => "c++17",

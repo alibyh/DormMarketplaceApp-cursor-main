@@ -1,0 +1,1 @@
+{"version":3,"names":["isBoolean","value","Error"],"sourceRoot":"../../../src","sources":["util/typings.ts"],"mappings":";;;;;;AAAO,SAASA,SAASA,CAACC,KAAU,EAAE;EAClC,IAAI,EAAE,OAAOA,KAAK,KAAK,SAAS,CAAC,EAAE;IAC/B,MAAM,IAAIC,KAAK,CAAC,iCAAiC,CAAC;EACtD;AACJ","ignoreList":[]}

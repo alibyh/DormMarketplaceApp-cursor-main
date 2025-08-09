@@ -1,0 +1,1 @@
+{"version":3,"file":"Location.d.ts","sourceRoot":"","sources":["../../../../src/common/Location.ts"],"names":[],"mappings":"AAAA;;GAEG;AACH,cAAM,QAAQ;IACV,QAAQ,CAAC,SAAS,EAAE,MAAM,CAAC;IAC3B,QAAQ,CAAC,UAAU,EAAE,MAAM,CAAC;IAE5B;;;;;OAKG;gBACS,QAAQ,EAAE,MAAM,EAAE,SAAS,EAAE,MAAM;CAIlD;AAED,eAAe,QAAQ,CAAC"}

@@ -1,0 +1,29 @@
+{
+  "cli": { "version": ">= 3.13.3" },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m1-medium",
+        "image": "macos-sequoia-15.4-xcode-16.3"
+      }
+    },
+    "production": {
+      "ios": {
+        "image": "macos-sequoia-15.4-xcode-16.3"
+      }
+    },
+    "development-simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true,
+        "resourceClass": "m1-medium",
+        "buildConfiguration": "Debug",
+        "image": "macos-sequoia-15.4-xcode-16.3"
+      },
+      "env": { "EAS_BUILD_SIMULATOR": "true" }
+    }
+  },
+  "submit": { "production": {} }
+}

@@ -1,0 +1,1 @@
+{"version":3,"names":["Platform","isSupportedPlatform","OS","Error"],"sourceRoot":"../../../src","sources":["util/validatingPlatform.ts"],"mappings":"AAAA,SAASA,QAAQ,QAAQ,cAAc;AAEvC,OAAO,SAASC,mBAAmBA,CAAA,EAAG;EAClC,IAAI,EAAED,QAAQ,CAACE,EAAE,KAAK,SAAS,IAAIF,QAAQ,CAACE,EAAE,KAAK,KAAK,CAAC,EAAE;IACvD,MAAM,IAAIC,KAAK,CAAC,mDAAmD,CAAC;EACxE;AACJ","ignoreList":[]}
