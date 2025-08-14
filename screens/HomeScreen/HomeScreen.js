@@ -684,7 +684,7 @@ const HomeScreen = ({ navigation, route }) => {
   // Add this function to show interstitial ads
   const showInterstitialAd = async () => {
     try {
-      await YandexAdsModule.loadInterstitial('R-M-16546684-3'); // Your interstitial ad unit ID
+      await YandexAdsModule.loadInterstitial('R-M-DEMO-320x50'); // Your interstitial ad unit ID
       await YandexAdsModule.showInterstitial();
     } catch (error) {
       console.error('Interstitial ad failed:', error);
@@ -1032,7 +1032,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#ff0000ff',
   },
   noProductsContainer: {
     alignItems: 'center',
