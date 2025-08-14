@@ -684,7 +684,7 @@ const HomeScreen = ({ navigation, route }) => {
   // Add this function to show interstitial ads
   const showInterstitialAd = async () => {
     try {
-      await YandexAdsModule.loadInterstitial('R-M-16546684-1'); // Your interstitial ad unit ID
+      await YandexAdsModule.loadInterstitial('R-M-16546684-3'); // Your interstitial ad unit ID
       await YandexAdsModule.showInterstitial();
     } catch (error) {
       console.error('Interstitial ad failed:', error);

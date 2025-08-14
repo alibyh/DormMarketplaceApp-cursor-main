@@ -3,7 +3,7 @@
     "name": "Marsa",
     "slug": "DormMarketplaceApp",
     "version": "1.0.0",
-    "jsEngine": "jsc", 
+    "jsEngine": "jsc",
     "orientation": "portrait",
     "icon": "./assets/S.F.U.png",
     "userInterfaceStyle": "light",
@@ -45,10 +45,10 @@
         }
       ]
     ],
-    "owner": "alibyh",
+    "owner": "alibyh4",
     "extra": {
       "eas": {
-        "projectId": "96eaf707-3dfe-43e9-9366-422ca68f6132"
+        "projectId": "a0a7f582-b53b-42cc-a068-3562177068db"
       }
     }
   }

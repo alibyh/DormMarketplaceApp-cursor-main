@@ -1,5 +1,8 @@
 {
-  "cli": { "version": ">= 3.13.3" },
+  "cli": {
+    "version": ">= 3.13.3",
+    "promptToConfigurePushNotifications": false
+  },
   "build": {
     "preview": {
       "distribution": "internal",
@@ -22,8 +25,12 @@
         "buildConfiguration": "Debug",
         "image": "macos-sequoia-15.4-xcode-16.3"
       },
-      "env": { "EAS_BUILD_SIMULATOR": "true" }
+      "env": {
+        "EAS_BUILD_SIMULATOR": "true"
+      }
     }
   },
-  "submit": { "production": {} }
+  "submit": {
+    "production": {}
+  }
 }

@@ -14,7 +14,7 @@ const isYandexAvailable =
   !!BannerView;
 
 // Use Yandex demo unit in dev builds to validate integration
-const IOS_AD_UNIT_ID = __DEV__ ? 'demo-banner-yandex' : 'R-M-16546684-1';
+const IOS_AD_UNIT_ID = __DEV__ ? 'demo-banner-yandex' : 'R-M-16546684-3';
 
 const YandexBanner = () => {
   const [bannerSize, setBannerSize] = useState(null);
