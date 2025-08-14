@@ -5,8 +5,16 @@ import { MobileAds, BannerView, BannerAdSize } from 'yandex-mobile-ads';
 
 const { width: screenWidth } = Dimensions.get('window');
 
-// Initialize the Yandex Mobile Ads SDK once
-MobileAds.initialize();
+// Detect if the native Yandex SDK is available (e.g., NOT Expo Go)
+const isYandexAvailable =
+  !!MobileAds &&
+  typeof MobileAds.initialize === 'function' &&
+  !!BannerAdSize &&
+  typeof BannerAdSize.inlineSize === 'function' &&
+  !!BannerView;
+
+// Use Yandex demo unit in dev builds to validate integration
+const IOS_AD_UNIT_ID = __DEV__ ? 'demo-banner-yandex' : 'R-M-16546684-1';
 
 const YandexBanner = () => {
   const [bannerSize, setBannerSize] = useState(null);
@@ -15,7 +23,16 @@ const YandexBanner = () => {
   useEffect(() => {
     const initializeBanner = async () => {
       try {
-        // Create banner size - using inline size for better control
+        if (!isYandexAvailable) {
+          console.warn(
+            'Yandex Ads SDK not available (likely Expo Go). Rendering placeholder.'
+          );
+          setIsLoading(false);
+          return;
+        }
+
+        // Initialize SDK once and create banner size
+        await MobileAds.initialize();
         const size = await BannerAdSize.inlineSize(screenWidth - 32, 50);
         setBannerSize(size);
         setIsLoading(false);
@@ -40,10 +57,22 @@ const YandexBanner = () => {
     );
   }
 
+  if (!isYandexAvailable) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.placeholderBanner}>
+          <Text style={styles.placeholderText}>
+            Ad placeholder (Yandex SDK unavailable)
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <BannerView
-        adUnitId="R-M-16546684-1"
+        adUnitId={IOS_AD_UNIT_ID}
         size={bannerSize}
         onAdLoaded={() => console.log('Yandex ad loaded successfully')}
         onAdFailedToLoad={(error) =>
