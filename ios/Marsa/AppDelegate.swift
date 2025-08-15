@@ -15,13 +15,7 @@ public class AppDelegate: ExpoAppDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     // Initialize Yandex Mobile Ads SDK
-    MobileAds.initialize { error in
-      if let error = error {
-        print("Failed to initialize Yandex Mobile Ads: \(error.localizedDescription)")
-      } else {
-        print("Yandex Mobile Ads SDK initialized successfully")
-      }
-    }
+    MobileAds.initialize()
     
     let delegate = ReactNativeDelegate()
     let factory = ExpoReactNativeFactory(delegate: delegate)

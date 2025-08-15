@@ -31,13 +31,8 @@ class YandexAdsModule: RCTEventEmitter {
   @objc(initialize:reject:)
   func initialize(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     DispatchQueue.main.async {
-      MobileAds.initialize { error in
-        if let error = error {
-          reject("INIT_ERROR", "Failed to initialize Yandex Mobile Ads: \(error.localizedDescription)", error)
-        } else {
-          resolve(true)
-        }
-      }
+      MobileAds.initialize()
+      resolve(true)
     }
   }
   
