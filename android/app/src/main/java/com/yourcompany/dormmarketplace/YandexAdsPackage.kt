@@ -1,13 +1,17 @@
 package com.yourcompany.dormmarketplace
 
-import android.view.View
-import expo.modules.kotlin.AppContext
-import expo.modules.kotlin.ModuleRegistryDelegate
-import expo.modules.kotlin.modules.Module
-import expo.modules.kotlin.modules.ModuleDefinition
+import com.facebook.react.ReactPackage
+import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.uimanager.ViewManager
+import java.util.Collections
 
-class YandexAdsPackage : expo.modules.kotlin.modules.ModulePackage() {
-  override fun createModules(context: AppContext): List<Module> {
-    return listOf(YandexAdsModule())
-  }
+class YandexAdsPackage : ReactPackage {
+    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
+        return listOf(YandexAdsModule(reactContext))
+    }
+
+    override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
+        return Collections.emptyList()
+    }
 }

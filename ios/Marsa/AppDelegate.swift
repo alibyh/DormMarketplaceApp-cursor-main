@@ -1,6 +1,7 @@
 import Expo
 import React
 import ReactAppDependencyProvider
+import YandexMobileAds
 
 @UIApplicationMain
 public class AppDelegate: ExpoAppDelegate {
@@ -13,6 +14,16 @@ public class AppDelegate: ExpoAppDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // Initialize Yandex Mobile Ads SDK
+    YMAMobileAds.shared().setUserConsent(true)
+    YMAMobileAds.shared().activate { error in
+      if let error = error {
+        print("Failed to initialize Yandex Mobile Ads: \(error.localizedDescription)")
+      } else {
+        print("Yandex Mobile Ads SDK initialized successfully")
+      }
+    }
+    
     let delegate = ReactNativeDelegate()
     let factory = ExpoReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
