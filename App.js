@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState, useContext } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { I18nextProvider, useTranslation } from 'react-i18next';
-import { View, Text, ActivityIndicator, StyleSheet, Alert } from 'react-native';
+import { View, Text, ActivityIndicator, StyleSheet, Alert, NativeModules } from 'react-native';
 import { UnreadContext } from './context/UnreadContext';
 import i18n from './i18n';
 import { UnreadProvider } from './context/UnreadContext';
@@ -17,6 +17,9 @@ import ErrorBoundary from './components/ErrorBoundary';
 import * as SplashScreen from 'expo-splash-screen';
 import { handleAppError } from './utils/appErrorHandler';
 import { Image } from 'expo-image';
+
+// Import YandexAdsModule for early initialization
+const { YandexAdsModule } = NativeModules;
 
 // Import screens
 import LoginScreen from './screens/LoginScreen/LoginScreen';
@@ -158,6 +161,19 @@ const App = () => {
     const initApp = async () => {
       try {
         await SplashScreen.preventAutoHideAsync();
+
+        // Initialize Yandex Ads SDK early
+        if (YandexAdsModule && typeof YandexAdsModule.initializeSDK === 'function') {
+          try {
+            console.log('[App] Initializing Yandex Ads SDK');
+            await YandexAdsModule.initializeSDK();
+            console.log('[App] Yandex Ads SDK initialized successfully');
+          } catch (adsError) {
+            console.error('[App] Failed to initialize Yandex Ads SDK:', adsError);
+          }
+        } else {
+          console.warn('[App] Yandex Ads SDK not available');
+        }
 
         // Check for existing session
         const { data: { session }, error } = await supabase.auth.getSession();

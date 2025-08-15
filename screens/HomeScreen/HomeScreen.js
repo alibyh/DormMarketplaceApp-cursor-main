@@ -516,16 +516,39 @@ const HomeScreen = ({ navigation, route }) => {
     let intervalId;
 
     const startAutoSlide = () => {
+      console.log('[HomeScreen] Starting auto-slide with:', {
+        bannersLength: banners.length,
+        adLoaded,
+        hasFlatListRef: !!bannerFlatListRef.current
+      });
+      
       intervalId = setInterval(() => {
         if ((banners.length > 0 || adLoaded) && bannerFlatListRef.current) {
           const totalItems = banners.length + (adLoaded ? 1 : 0);
-          const currentScrollX = bannerScrollX._value;
+          const currentScrollX = bannerScrollX._value || 0;
           const currentIndex = Math.round(currentScrollX / screenWidth);
           const nextIndex = (currentIndex + 1) % totalItems;
+          
+          console.log('[HomeScreen] Auto-sliding:', { 
+            currentIndex, 
+            nextIndex, 
+            totalItems,
+            screenWidth
+          });
 
-          bannerFlatListRef.current.scrollToOffset({
-            offset: nextIndex * screenWidth,
-            animated: true,
+          try {
+            bannerFlatListRef.current.scrollToOffset({
+              offset: nextIndex * screenWidth,
+              animated: true,
+            });
+          } catch (error) {
+            console.error('[HomeScreen] Error during auto-slide:', error);
+          }
+        } else {
+          console.log('[HomeScreen] Skipping auto-slide:', {
+            bannersLength: banners.length,
+            adLoaded,
+            hasFlatListRef: !!bannerFlatListRef.current
           });
         }
       }, 3000);
@@ -534,12 +557,19 @@ const HomeScreen = ({ navigation, route }) => {
     };
 
     if (banners.length > 0 || adLoaded) {
+      console.log('[HomeScreen] Auto-slide conditions met, setting up timer');
       const intervalId = startAutoSlide();
       return () => {
+        console.log('[HomeScreen] Cleaning up auto-slide timer');
         if (intervalId) {
           clearInterval(intervalId);
         }
       };
+    } else {
+      console.log('[HomeScreen] Auto-slide conditions not met:', {
+        bannersLength: banners.length,
+        adLoaded
+      });
     }
   }, [banners.length, screenWidth, adLoaded]);
 
@@ -667,27 +697,42 @@ const HomeScreen = ({ navigation, route }) => {
     );
   }, [isSortModalVisible, sortType, t]);
 
-  // useEffect(() => {
-  //   const initAds = async () => {
-  //     try {
-  //       await YandexAdsModule.initializeSDK();
-  //       await YandexAdsModule.loadBanner('R-M-14841144-1'); // Your banner ad unit ID
-  //       setAdLoaded(true);
-  //     } catch (error) {
-  //       console.error('Ad initialization failed:', error);
-  //     }
-  //   };
+  useEffect(() => {
+    const initAds = async () => {
+      try {
+        console.log('[HomeScreen] Initializing Yandex Ads SDK');
+        if (YandexAdsModule && typeof YandexAdsModule.initializeSDK === 'function') {
+          await YandexAdsModule.initializeSDK();
+          console.log('[HomeScreen] Yandex SDK initialized successfully');
+          
+          if (typeof YandexAdsModule.loadBanner === 'function') {
+            console.log('[HomeScreen] Loading banner with ID: R-M-16546684-1');
+            await YandexAdsModule.loadBanner('R-M-16546684-1');
+            console.log('[HomeScreen] Banner loaded successfully, setting adLoaded to true');
+            setAdLoaded(true);
+          } else {
+            console.error('[HomeScreen] YandexAdsModule.loadBanner is not a function');
+          }
+        } else {
+          console.error('[HomeScreen] YandexAdsModule or initializeSDK not available:', YandexAdsModule);
+        }
+      } catch (error) {
+        console.error('[HomeScreen] Ad initialization failed:', error);
+      }
+    };
 
-  //   initAds();
-  // }, []);
+    initAds();
+  }, []);
 
   // Add this function to show interstitial ads
   const showInterstitialAd = async () => {
     try {
-      await YandexAdsModule.loadInterstitial('R-M-DEMO-320x50'); // Your interstitial ad unit ID
+      console.log('[HomeScreen] Loading interstitial ad');
+      await YandexAdsModule.loadInterstitial('R-M-16546684-1'); // Updated to use your actual ad unit ID
+      console.log('[HomeScreen] Showing interstitial ad');
       await YandexAdsModule.showInterstitial();
     } catch (error) {
-      console.error('Interstitial ad failed:', error);
+      console.error('[HomeScreen] Interstitial ad failed:', error);
     }
   };
 
@@ -761,11 +806,15 @@ const HomeScreen = ({ navigation, route }) => {
             {/* Banner Carousel */}
             {(banners.length > 0 || true) && (
               <FlatList
+                ref={bannerFlatListRef}
                 data={[{ id: 'yandex-banner' }, ...banners]}
                 keyExtractor={(item) => item.id.toString()}
                 renderItem={({ item }) =>
                   item.id === 'yandex-banner' ? (
-                    <YandexBanner onAdLoaded={() => setAdLoaded(true)} />
+                    <YandexBanner onAdLoaded={() => {
+                      console.log('[HomeScreen] Yandex banner loaded, setting adLoaded to true');
+                      setAdLoaded(true);
+                    }} />
                   ) : (
                     renderBannerItem({ item })
                   )

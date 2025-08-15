@@ -1,5 +1,5 @@
 // plugins/withYandexAds.js
-module.exports = function withYandexAds(config, { sdkVersion = "7.13.0" } = {}) {
+module.exports = function withYandexAds(config, { sdkVersion = "7.14.0" } = {}) {
   return require("@expo/config-plugins").withDangerousMod(config, [
     "ios",
     async (c) => {

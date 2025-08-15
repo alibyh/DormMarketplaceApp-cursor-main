@@ -13,8 +13,8 @@ const isYandexAvailable =
   typeof BannerAdSize.inlineSize === 'function' &&
   !!BannerView;
 
-// Use Yandex demo unit in dev builds to validate integration
-    const IOS_AD_UNIT_ID = 'R-M-DEMO-320x50';
+// Use actual Yandex ad unit ID
+    const IOS_AD_UNIT_ID = 'R-M-16546684-1';
 const YandexBanner = ({ onAdLoaded }) => {
   const [bannerSize, setBannerSize] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -22,20 +22,33 @@ const YandexBanner = ({ onAdLoaded }) => {
   useEffect(() => {
     const initializeBanner = async () => {
       try {
+        console.log('[YandexBanner] Starting banner initialization');
+        console.log('[YandexBanner] SDK Available:', isYandexAvailable);
+        console.log('[YandexBanner] MobileAds:', !!MobileAds);
+        console.log('[YandexBanner] BannerView:', !!BannerView);
+        console.log('[YandexBanner] BannerAdSize:', !!BannerAdSize);
+        
         if (!isYandexAvailable) {
           console.warn(
-            'Yandex Ads SDK not available (likely Expo Go). Rendering placeholder.'
+            '[YandexBanner] Yandex Ads SDK not available (likely Expo Go). Rendering placeholder.'
           );
           setIsLoading(false);
           return;
         }
 
         // Initialize SDK once and create banner size
-        const size = await BannerAdSize.inlineSize(screenWidth - 32, 50);
-        setBannerSize(size);
+        console.log('[YandexBanner] Creating banner size');
+        try {
+          const size = await BannerAdSize.inlineSize(screenWidth - 32, 50);
+          console.log('[YandexBanner] Banner size created successfully:', size);
+          setBannerSize(size);
+        } catch (sizeError) {
+          console.error('[YandexBanner] Error creating banner size:', sizeError);
+        }
+        
         setIsLoading(false);
       } catch (error) {
-        console.error('Failed to initialize banner size:', error);
+        console.error('[YandexBanner] Failed to initialize banner:', error);
         setIsLoading(false);
       }
     };
@@ -73,14 +86,17 @@ const YandexBanner = ({ onAdLoaded }) => {
         adUnitId={IOS_AD_UNIT_ID}
         size={bannerSize}
         onAdLoaded={() => {
-          console.log('Yandex ad loaded successfully');
-          if (onAdLoaded) onAdLoaded();
+          console.log('[YandexBanner] Ad loaded successfully');
+          if (onAdLoaded) {
+            console.log('[YandexBanner] Calling onAdLoaded callback');
+            onAdLoaded();
+          }
         }}
-        onAdFailedToLoad={(error) =>
-          console.error('Yandex ad failed to load:', error)
-        }
-        onAdClicked={() => console.log('Yandex ad clicked')}
-        onAdImpression={() => console.log('Yandex ad impression')}
+        onAdFailedToLoad={(error) => {
+          console.error('[YandexBanner] Ad failed to load:', error);
+        }}
+        onAdClicked={() => console.log('[YandexBanner] Ad clicked')}
+        onAdImpression={() => console.log('[YandexBanner] Ad impression recorded')}
         style={styles.bannerView}
       />
     </View>

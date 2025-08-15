@@ -18,7 +18,13 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.alibyh.DormMarketplaceApp",
       "infoPlist": {
-        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you.",
+        "SKAdNetworkItems": [
+          {
+            "SKAdNetworkIdentifier": "zq492l623r.skadnetwork"
+          }
+        ],
+        "GADApplicationIdentifier": "ca-app-pub-3940256099942544~1458002511"
       },
       "deploymentTarget": "15.1"
     },
@@ -44,7 +50,8 @@
           "photosPermission": "The app accesses your photos to let you share them with your friends."
         }
       ],
-      "./plugins/withYandexAds"
+      "./plugins/withYandexAds",
+      "./plugins/withYandexAdsAndroid"
     ],
     "owner": "alibyh4",
     "extra": {
