@@ -765,7 +765,7 @@ const HomeScreen = ({ navigation, route }) => {
                 keyExtractor={(item) => item.id.toString()}
                 renderItem={({ item }) =>
                   item.id === 'yandex-banner' ? (
-                    <YandexBanner />
+                    <YandexBanner onAdLoaded={() => setAdLoaded(true)} />
                   ) : (
                     renderBannerItem({ item })
                   )

@@ -15,7 +15,7 @@ const isYandexAvailable =
 
 // Use Yandex demo unit in dev builds to validate integration
     const IOS_AD_UNIT_ID = 'R-M-DEMO-320x50';
-const YandexBanner = () => {
+const YandexBanner = ({ onAdLoaded }) => {
   const [bannerSize, setBannerSize] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -31,7 +31,6 @@ const YandexBanner = () => {
         }
 
         // Initialize SDK once and create banner size
-        await MobileAds.initialize();
         const size = await BannerAdSize.inlineSize(screenWidth - 32, 50);
         setBannerSize(size);
         setIsLoading(false);
@@ -73,7 +72,10 @@ const YandexBanner = () => {
       <BannerView
         adUnitId={IOS_AD_UNIT_ID}
         size={bannerSize}
-        onAdLoaded={() => console.log('Yandex ad loaded successfully')}
+        onAdLoaded={() => {
+          console.log('Yandex ad loaded successfully');
+          if (onAdLoaded) onAdLoaded();
+        }}
         onAdFailedToLoad={(error) =>
           console.error('Yandex ad failed to load:', error)
         }
