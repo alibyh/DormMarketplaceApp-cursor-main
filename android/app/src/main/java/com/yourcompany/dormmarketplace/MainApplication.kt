@@ -18,8 +18,7 @@ class MainApplication : Application(), ReactApplication {
 
         override fun getPackages(): List<ReactPackage> {
             val packages = PackageList(this).packages.toMutableList()
-            // Add the Yandex Ads package
-            packages.add(YandexAdsPackage())
+            // Packages are auto-linked via React Native autolinking
             return packages
         }
 

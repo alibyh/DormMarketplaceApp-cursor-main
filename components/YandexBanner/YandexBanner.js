@@ -1,14 +1,14 @@
 // components/YandexBanner/YandexBanner.js
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Dimensions, Text, NativeModules, DeviceEventEmitter } from 'react-native';
+import { View, StyleSheet, Dimensions, Text } from 'react-native';
+import { MobileAds, BannerView, BannerAdSize } from 'yandex-mobile-ads';
 
 const { width: screenWidth } = Dimensions.get('window');
-const { YandexAdsModule } = NativeModules;
 
 // Use actual Yandex ad unit ID
 const AD_UNIT_ID = 'R-M-16546684-1';
 
-// Real Yandex banner component that uses native modules
+// Real Yandex banner component using official yandex-mobile-ads package
 const YandexBanner = ({ onAdLoaded }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [adError, setAdError] = useState(null);
@@ -18,43 +18,22 @@ const YandexBanner = ({ onAdLoaded }) => {
   useEffect(() => {
     const initialize = async () => {
       try {
-        console.log('[YandexBanner] Checking native module availability');
+        console.log('[YandexBanner] Initializing Yandex Mobile Ads SDK');
         
-        if (!YandexAdsModule) {
-          throw new Error('Native module not available');
+        // Initialize the SDK
+        await MobileAds.initialize();
+        console.log('[YandexBanner] Yandex Mobile Ads SDK initialized successfully');
+        
+        setIsInitialized(true);
+        setIsLoading(false);
+        
+        // Call onAdLoaded to enable auto-sliding
+        if (onAdLoaded) {
+          onAdLoaded();
         }
         
-        console.log('[YandexBanner] Initializing Yandex Ads SDK');
-        await YandexAdsModule.initialize();
-        console.log('[YandexBanner] Yandex Ads SDK initialized successfully');
-        setIsInitialized(true);
-        
-        // Set up event listeners for ad events
-        const adLoadedListener = DeviceEventEmitter.addListener('onAdLoaded', (event) => {
-          if (event.type === 'banner') {
-            console.log('[YandexBanner] Banner ad loaded successfully');
-            setIsLoading(false);
-            if (onAdLoaded) {
-              onAdLoaded();
-            }
-          }
-        });
-        
-        const adFailedListener = DeviceEventEmitter.addListener('onAdFailedToLoad', (event) => {
-          if (event.type === 'banner') {
-            console.error('[YandexBanner] Banner ad failed to load:', event.error);
-            setAdError(event.error || 'Failed to load ad');
-            setIsLoading(false);
-          }
-        });
-        
-        return () => {
-          adLoadedListener.remove();
-          adFailedListener.remove();
-        };
-        
       } catch (error) {
-        console.error('[YandexBanner] Failed to initialize Yandex Ads SDK:', error);
+        console.error('[YandexBanner] Failed to initialize Yandex Mobile Ads SDK:', error);
         setAdError('Failed to initialize SDK: ' + error.message);
         setIsLoading(false);
       }
@@ -62,27 +41,22 @@ const YandexBanner = ({ onAdLoaded }) => {
     
     initialize();
   }, [onAdLoaded]);
-  
-  // Load banner ad once initialized
-  useEffect(() => {
-    if (isInitialized && YandexAdsModule) {
-      const loadBanner = async () => {
-        try {
-          console.log('[YandexBanner] Loading banner ad with unit ID:', AD_UNIT_ID);
-          
-          // Create a simple banner without requiring a specific view tag
-          await YandexAdsModule.showBanner(AD_UNIT_ID, {});
-          
-        } catch (error) {
-          console.error('[YandexBanner] Error loading banner:', error);
-          setAdError('Failed to load banner: ' + error.message);
-          setIsLoading(false);
-        }
-      };
-      
-      loadBanner();
+
+  // Handle ad loading success
+  const handleAdLoaded = () => {
+    console.log('[YandexBanner] Banner ad loaded successfully');
+    setIsLoading(false);
+    if (onAdLoaded) {
+      onAdLoaded();
     }
-  }, [isInitialized]);
+  };
+
+  // Handle ad loading failure
+  const handleAdFailedToLoad = (error) => {
+    console.error('[YandexBanner] Banner ad failed to load:', error);
+    setAdError(error?.message || 'Failed to load ad');
+    setIsLoading(false);
+  };
 
   // Show loading state
   if (isLoading) {
@@ -110,15 +84,22 @@ const YandexBanner = ({ onAdLoaded }) => {
     );
   }
 
-  // Show placeholder for the real Yandex banner ad
-  // The actual ad view is managed by the native module
-  return (
-    <View style={styles.container}>
-      <View style={styles.bannerView}>
-        <Text style={styles.adText}>Yandex Ad Loading...</Text>
+  // Show the real Yandex banner ad using official component
+  if (isInitialized) {
+    return (
+      <View style={styles.container}>
+        <BannerView
+          adUnitId={AD_UNIT_ID}
+          adSize={BannerAdSize.flexibleBanner(screenWidth - 32, 50)}
+          style={styles.bannerView}
+          onAdLoaded={handleAdLoaded}
+          onAdFailedToLoad={handleAdFailedToLoad}
+        />
       </View>
-    </View>
-  );
+    );
+  }
+
+  return null;
 };
 
 const styles = StyleSheet.create({
