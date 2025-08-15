@@ -1,62 +1,54 @@
 // components/YandexBanner/YandexBanner.js
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Dimensions, Text } from 'react-native';
-import { MobileAds, BannerView, BannerAdSize } from 'yandex-mobile-ads';
+import { View, StyleSheet, Dimensions, Text, Platform, NativeModules } from 'react-native';
+import YandexAdsBridge from './YandexBridgeModule';
 
 const { width: screenWidth } = Dimensions.get('window');
 
-// Detect if the native Yandex SDK is available (e.g., NOT Expo Go)
-const isYandexAvailable =
-  !!MobileAds &&
-  typeof MobileAds.initialize === 'function' &&
-  !!BannerAdSize &&
-  typeof BannerAdSize.inlineSize === 'function' &&
-  !!BannerView;
-
 // Use actual Yandex ad unit ID
-    const IOS_AD_UNIT_ID = 'R-M-16546684-1';
+const AD_UNIT_ID = 'R-M-16546684-1';
+
 const YandexBanner = ({ onAdLoaded }) => {
-  const [bannerSize, setBannerSize] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [adError, setAdError] = useState(null);
 
   useEffect(() => {
-    const initializeBanner = async () => {
+    const loadBanner = async () => {
       try {
         console.log('[YandexBanner] Starting banner initialization');
-        console.log('[YandexBanner] SDK Available:', isYandexAvailable);
-        console.log('[YandexBanner] MobileAds:', !!MobileAds);
-        console.log('[YandexBanner] BannerView:', !!BannerView);
-        console.log('[YandexBanner] BannerAdSize:', !!BannerAdSize);
         
-        if (!isYandexAvailable) {
-          console.warn(
-            '[YandexBanner] Yandex Ads SDK not available (likely Expo Go). Rendering placeholder.'
-          );
+        // Check if native module exists
+        if (!NativeModules.YandexAdsModule) {
+          console.error('[YandexBanner] YandexAdsModule not found in NativeModules');
+          setAdError('Native module not available');
           setIsLoading(false);
           return;
         }
 
-        // Initialize SDK once and create banner size
-        console.log('[YandexBanner] Creating banner size');
-        try {
-          const size = await BannerAdSize.inlineSize(screenWidth - 32, 50);
-          console.log('[YandexBanner] Banner size created successfully:', size);
-          setBannerSize(size);
-        } catch (sizeError) {
-          console.error('[YandexBanner] Error creating banner size:', sizeError);
+        // Initialize and load banner
+        await YandexAdsBridge.initialize();
+        await YandexAdsBridge.loadBanner(AD_UNIT_ID);
+        
+        console.log('[YandexBanner] Banner loaded successfully');
+        
+        // Notify parent component
+        if (onAdLoaded) {
+          onAdLoaded();
         }
         
         setIsLoading(false);
       } catch (error) {
-        console.error('[YandexBanner] Failed to initialize banner:', error);
+        console.error('[YandexBanner] Error loading banner:', error);
+        setAdError(error.message || 'Failed to load ad');
         setIsLoading(false);
       }
     };
 
-    initializeBanner();
-  }, []);
+    loadBanner();
+  }, [onAdLoaded]);
 
-  if (isLoading || !bannerSize) {
+  // Show loading state
+  if (isLoading) {
     return (
       <View style={styles.container}>
         <View style={styles.placeholderBanner}>
@@ -68,37 +60,24 @@ const YandexBanner = ({ onAdLoaded }) => {
     );
   }
 
-  if (!isYandexAvailable) {
+  // Show error state
+  if (adError) {
     return (
       <View style={styles.container}>
         <View style={styles.placeholderBanner}>
           <Text style={styles.placeholderText}>
-            Ad placeholder (Yandex SDK unavailable)
+            Ad unavailable: {adError}
           </Text>
         </View>
       </View>
     );
   }
 
+  // Show a simple container for the native ad
+  // The actual ad will be rendered by the native module
   return (
     <View style={styles.container}>
-      <BannerView
-        adUnitId={IOS_AD_UNIT_ID}
-        size={bannerSize}
-        onAdLoaded={() => {
-          console.log('[YandexBanner] Ad loaded successfully');
-          if (onAdLoaded) {
-            console.log('[YandexBanner] Calling onAdLoaded callback');
-            onAdLoaded();
-          }
-        }}
-        onAdFailedToLoad={(error) => {
-          console.error('[YandexBanner] Ad failed to load:', error);
-        }}
-        onAdClicked={() => console.log('[YandexBanner] Ad clicked')}
-        onAdImpression={() => console.log('[YandexBanner] Ad impression recorded')}
-        style={styles.bannerView}
-      />
+      <View style={styles.bannerView} />
     </View>
   );
 };

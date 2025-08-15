@@ -1,22 +1,12 @@
+// plugins/yandex-ads/index.js
 const { withPlugins } = require('@expo/config-plugins');
+const withYandexAds = require('../withYandexAds');
+const withYandexAdsAndroid = require('../withYandexAdsAndroid');
 
-const withYandexAds = (config, { android = {}, ios = {} }) => {
-  // Save the original config
-  const modifiedConfig = { ...config };
-
-  // Add iOS configuration
-  if (!modifiedConfig.ios) {
-    modifiedConfig.ios = {};
-  }
-  modifiedConfig.ios.yandexAdsAppId = ios.appId;
-
-  // Add Android configuration
-  if (!modifiedConfig.android) {
-    modifiedConfig.android = {};
-  }
-  modifiedConfig.android.yandexAdsAppId = android.appId;
-
-  return modifiedConfig;
+// Combine iOS and Android plugins
+module.exports = (config) => {
+  return withPlugins(config, [
+    [withYandexAds, { sdkVersion: '7.14.0' }],
+    [withYandexAdsAndroid, { sdkVersion: '6.4.0' }]
+  ]);
 };
-
-module.exports = withYandexAds;
