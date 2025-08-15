@@ -34,7 +34,7 @@ module.exports = function withYandexAds(config, { sdkVersion = "7.14.0" } = {}) 
         `- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
   // Initialize Yandex Mobile Ads SDK
-  [[YMAMobileAds sharedInstance] activateWithCompletionHandler:nil];
+  [MobileAds initialize];
   
   // Original implementation continues below`
       );

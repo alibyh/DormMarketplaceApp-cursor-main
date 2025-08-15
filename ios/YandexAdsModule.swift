@@ -42,9 +42,6 @@ class YandexAdsModule: RCTEventEmitter {
       // Clean up existing banner if any
       self.bannerView?.removeFromSuperview()
       
-      // Get the view tag if provided
-      let viewTag = options["viewTag"] as? NSNumber
-      
       // Create banner size
       let bannerSize = BannerAdSize.flexibleSize(with: CGSize(width: 320, height: 50))
       
@@ -52,30 +49,10 @@ class YandexAdsModule: RCTEventEmitter {
       self.bannerView = BannerAdView(adUnitId: adUnitId, adSize: bannerSize)
       self.bannerView?.delegate = self
       
-      if let viewTag = viewTag {
-        // Find the React Native view by tag
-        let rootView = UIApplication.shared.keyWindow?.rootViewController?.view
-        let bridge = RCTBridge.current()
-        let uiManager = bridge?.module(for: RCTUIManager.self) as? RCTUIManager
-        
-        uiManager?.addUIBlock { (_, viewRegistry) in
-          if let containerView = viewRegistry?[viewTag] as? UIView {
-            // Add the banner to the container view
-            self.bannerView?.frame = containerView.bounds
-            self.bannerView?.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            containerView.addSubview(self.bannerView!)
-            
-            // Load the ad
-            self.bannerView?.loadAd()
-            resolve(true)
-          } else {
-            reject("VIEW_NOT_FOUND", "Could not find view with tag \(viewTag)", nil)
-          }
-        }
-      } else {
-        // No view tag provided, reject
-        reject("INVALID_VIEW_TAG", "View tag is required", nil)
-      }
+      // For now, just load the ad without attaching to a specific view
+      // The banner will be managed by the delegate callbacks
+      self.bannerView?.loadAd()
+      resolve(true)
     }
   }
   
