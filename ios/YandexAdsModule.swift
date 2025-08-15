@@ -6,9 +6,9 @@ import React
 class YandexAdsModule: RCTEventEmitter {
   
   private var hasListeners = false
-  private var bannerView: YMAAdView?
-  private var interstitialAd: YMAInterstitialAd?
-  private var rewardedAd: YMARewardedAd?
+  private var bannerView: BannerAdView?
+  private var interstitialAd: InterstitialAd?
+  private var rewardedAd: RewardedAd?
   private var isInterstitialLoaded = false
   private var isRewardedLoaded = false
   
@@ -31,8 +31,7 @@ class YandexAdsModule: RCTEventEmitter {
   @objc(initialize:reject:)
   func initialize(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     DispatchQueue.main.async {
-      YMAMobileAds.shared().setUserConsent(true)
-      YMAMobileAds.shared().activate { error in
+      MobileAds.initialize { error in
         if let error = error {
           reject("INIT_ERROR", "Failed to initialize Yandex Mobile Ads: \(error.localizedDescription)", error)
         } else {
@@ -52,10 +51,10 @@ class YandexAdsModule: RCTEventEmitter {
       let viewTag = options["viewTag"] as? NSNumber
       
       // Create banner size
-      let bannerSize = YMAAdSize.flexibleSize(with: CGSize(width: 320, height: 50))
+      let bannerSize = BannerAdSize.flexibleSize(with: CGSize(width: 320, height: 50))
       
       // Create banner view
-      self.bannerView = YMAAdView(adUnitID: adUnitId, adSize: bannerSize)
+      self.bannerView = BannerAdView(adUnitId: adUnitId, adSize: bannerSize)
       self.bannerView?.delegate = self
       
       if let viewTag = viewTag {
@@ -97,9 +96,9 @@ class YandexAdsModule: RCTEventEmitter {
   @objc(loadInterstitial:resolve:reject:)
   func loadInterstitial(adUnitId: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     DispatchQueue.main.async {
-      self.interstitialAd = YMAInterstitialAd(adUnitID: adUnitId)
+      self.interstitialAd = InterstitialAd(adUnitId: adUnitId)
       self.interstitialAd?.delegate = self
-      self.interstitialAd?.load()
+      self.interstitialAd?.loadAd()
       resolve(true)
     }
   }
@@ -109,7 +108,7 @@ class YandexAdsModule: RCTEventEmitter {
     DispatchQueue.main.async {
       if let interstitialAd = self.interstitialAd, self.isInterstitialLoaded {
         if let rootViewController = UIApplication.shared.keyWindow?.rootViewController {
-          interstitialAd.present(from: rootViewController)
+          interstitialAd.show(from: rootViewController)
           resolve(true)
         } else {
           reject("NO_ROOT_VIEW", "Could not find root view controller", nil)
@@ -128,9 +127,9 @@ class YandexAdsModule: RCTEventEmitter {
   @objc(loadRewarded:resolve:reject:)
   func loadRewarded(adUnitId: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     DispatchQueue.main.async {
-      self.rewardedAd = YMARewardedAd(adUnitID: adUnitId)
+      self.rewardedAd = RewardedAd(adUnitId: adUnitId)
       self.rewardedAd?.delegate = self
-      self.rewardedAd?.load()
+      self.rewardedAd?.loadAd()
       resolve(true)
     }
   }
@@ -140,7 +139,7 @@ class YandexAdsModule: RCTEventEmitter {
     DispatchQueue.main.async {
       if let rewardedAd = self.rewardedAd, self.isRewardedLoaded {
         if let rootViewController = UIApplication.shared.keyWindow?.rootViewController {
-          rewardedAd.present(from: rootViewController)
+          rewardedAd.show(from: rootViewController)
           resolve(true)
         } else {
           reject("NO_ROOT_VIEW", "Could not find root view controller", nil)
@@ -162,115 +161,127 @@ class YandexAdsModule: RCTEventEmitter {
   }
 }
 
-// MARK: - YMAAdViewDelegate
-extension YandexAdsModule: YMAAdViewDelegate {
-  func adViewDidLoad(_ adView: YMAAdView) {
+// MARK: - BannerAdViewDelegate
+extension YandexAdsModule: BannerAdViewDelegate {
+  func bannerAdViewDidLoad(_ bannerAdView: BannerAdView) {
     if hasListeners {
       sendEvent(withName: "onAdLoaded", body: ["type": "banner"])
     }
   }
   
-  func adViewDidFailLoading(_ adView: YMAAdView, error: Error) {
+  func bannerAdView(_ bannerAdView: BannerAdView, didFailToLoadWithError error: Error) {
     if hasListeners {
       sendEvent(withName: "onAdFailedToLoad", body: ["type": "banner", "error": error.localizedDescription])
     }
   }
   
-  func adViewDidClick(_ adView: YMAAdView) {
+  func bannerAdViewDidClick(_ bannerAdView: BannerAdView) {
     if hasListeners {
       sendEvent(withName: "onAdClicked", body: ["type": "banner"])
     }
   }
   
-  func adViewWillLeaveApplication(_ adView: YMAAdView) {
+  func bannerAdViewWillLeaveApplication(_ bannerAdView: BannerAdView) {
     // Not sending an event for this
   }
   
-  func adViewDidTrackImpression(_ adView: YMAAdView) {
+  func bannerAdViewDidTrackImpression(_ bannerAdView: BannerAdView) {
     if hasListeners {
       sendEvent(withName: "onAdImpression", body: ["type": "banner"])
     }
   }
 }
 
-// MARK: - YMAInterstitialAdDelegate
-extension YandexAdsModule: YMAInterstitialAdDelegate {
-  func interstitialAdDidLoad(_ interstitialAd: YMAInterstitialAd) {
+// MARK: - InterstitialAdDelegate
+extension YandexAdsModule: InterstitialAdDelegate {
+  func interstitialAdDidLoad(_ interstitialAd: InterstitialAd) {
     self.isInterstitialLoaded = true
     if hasListeners {
       sendEvent(withName: "onAdLoaded", body: ["type": "interstitial"])
     }
   }
   
-  func interstitialAdDidFailToLoad(_ interstitialAd: YMAInterstitialAd, error: Error) {
+  func interstitialAd(_ interstitialAd: InterstitialAd, didFailToLoadWithError error: Error) {
     self.isInterstitialLoaded = false
     if hasListeners {
       sendEvent(withName: "onAdFailedToLoad", body: ["type": "interstitial", "error": error.localizedDescription])
     }
   }
   
-  func interstitialAdDidClick(_ interstitialAd: YMAInterstitialAd) {
+  func interstitialAdDidClick(_ interstitialAd: InterstitialAd) {
     if hasListeners {
       sendEvent(withName: "onAdClicked", body: ["type": "interstitial"])
     }
   }
   
-  func interstitialAdDidShow(_ interstitialAd: YMAInterstitialAd) {
+  func interstitialAdDidShow(_ interstitialAd: InterstitialAd) {
     if hasListeners {
       sendEvent(withName: "onAdImpression", body: ["type": "interstitial"])
     }
   }
   
-  func interstitialAdDidDismiss(_ interstitialAd: YMAInterstitialAd) {
+  func interstitialAdDidDismiss(_ interstitialAd: InterstitialAd) {
     self.isInterstitialLoaded = false
     if hasListeners {
       sendEvent(withName: "onAdDismissed", body: ["type": "interstitial"])
     }
   }
+  
+  func interstitialAdDidTrackImpression(_ interstitialAd: InterstitialAd) {
+    if hasListeners {
+      sendEvent(withName: "onAdImpression", body: ["type": "interstitial"])
+    }
+  }
 }
 
-// MARK: - YMARewardedAdDelegate
-extension YandexAdsModule: YMARewardedAdDelegate {
-  func rewardedAdDidLoad(_ rewardedAd: YMARewardedAd) {
+// MARK: - RewardedAdDelegate
+extension YandexAdsModule: RewardedAdDelegate {
+  func rewardedAdDidLoad(_ rewardedAd: RewardedAd) {
     self.isRewardedLoaded = true
     if hasListeners {
       sendEvent(withName: "onAdLoaded", body: ["type": "rewarded"])
     }
   }
   
-  func rewardedAdDidFailToLoad(_ rewardedAd: YMARewardedAd, error: Error) {
+  func rewardedAd(_ rewardedAd: RewardedAd, didFailToLoadWithError error: Error) {
     self.isRewardedLoaded = false
     if hasListeners {
       sendEvent(withName: "onAdFailedToLoad", body: ["type": "rewarded", "error": error.localizedDescription])
     }
   }
   
-  func rewardedAdDidClick(_ rewardedAd: YMARewardedAd) {
+  func rewardedAdDidClick(_ rewardedAd: RewardedAd) {
     if hasListeners {
       sendEvent(withName: "onAdClicked", body: ["type": "rewarded"])
     }
   }
   
-  func rewardedAdDidShow(_ rewardedAd: YMARewardedAd) {
+  func rewardedAdDidShow(_ rewardedAd: RewardedAd) {
     if hasListeners {
       sendEvent(withName: "onAdImpression", body: ["type": "rewarded"])
     }
   }
   
-  func rewardedAdDidDismiss(_ rewardedAd: YMARewardedAd) {
+  func rewardedAdDidDismiss(_ rewardedAd: RewardedAd) {
     self.isRewardedLoaded = false
     if hasListeners {
       sendEvent(withName: "onAdDismissed", body: ["type": "rewarded"])
     }
   }
   
-  func rewardedAd(_ rewardedAd: YMARewardedAd, didReward reward: YMAReward) {
+  func rewardedAd(_ rewardedAd: RewardedAd, didRewardWith reward: Reward) {
     if hasListeners {
       sendEvent(withName: "onAdRewarded", body: [
         "type": "rewarded",
         "amount": reward.amount,
         "type": reward.type
       ])
+    }
+  }
+  
+  func rewardedAdDidTrackImpression(_ rewardedAd: RewardedAd) {
+    if hasListeners {
+      sendEvent(withName: "onAdImpression", body: ["type": "rewarded"])
     }
   }
 }

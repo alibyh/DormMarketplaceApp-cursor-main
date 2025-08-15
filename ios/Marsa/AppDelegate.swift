@@ -15,8 +15,7 @@ public class AppDelegate: ExpoAppDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     // Initialize Yandex Mobile Ads SDK
-    YMAMobileAds.shared().setUserConsent(true)
-    YMAMobileAds.shared().activate { error in
+    MobileAds.initialize { error in
       if let error = error {
         print("Failed to initialize Yandex Mobile Ads: \(error.localizedDescription)")
       } else {
