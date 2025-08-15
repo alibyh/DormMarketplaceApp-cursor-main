@@ -18,8 +18,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { handleAppError } from './utils/appErrorHandler';
 import { Image } from 'expo-image';
 
-// Import YandexAdsModule for early initialization
-const { YandexAdsModule } = NativeModules;
+// YandexAdsModule import removed to debug crash
 
 // Import screens
 import LoginScreen from './screens/LoginScreen/LoginScreen';
@@ -162,18 +161,8 @@ const App = () => {
       try {
         await SplashScreen.preventAutoHideAsync();
 
-        // Initialize Yandex Ads SDK early
-        if (YandexAdsModule && typeof YandexAdsModule.initializeSDK === 'function') {
-          try {
-            console.log('[App] Initializing Yandex Ads SDK');
-            await YandexAdsModule.initializeSDK();
-            console.log('[App] Yandex Ads SDK initialized successfully');
-          } catch (adsError) {
-            console.error('[App] Failed to initialize Yandex Ads SDK:', adsError);
-          }
-        } else {
-          console.warn('[App] Yandex Ads SDK not available');
-        }
+        // Yandex Ads SDK initialization removed to debug crash
+        console.log('[App] Yandex Ads SDK initialization disabled for debugging');
 
         // Check for existing session
         const { data: { session }, error } = await supabase.auth.getSession();

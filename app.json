@@ -56,8 +56,7 @@
         {
           "photosPermission": "The app accesses your photos to let you share them with your friends."
         }
-      ],
-      "./plugins/yandex-ads"
+      ]
     ],
     "owner": "alibyh4",
     "extra": {
