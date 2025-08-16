@@ -28,6 +28,7 @@ const YandexBanner = ({ onAdLoaded }) => {
           setIsLoading(false);
         }, 10000); // 10 second timeout
         AdRequestConfiguration.setUserConsent(true);
+        MobileAds.enableLogging();
         // Initialize the SDK
         await MobileAds.initialize();
         clearTimeout(initTimeout);
