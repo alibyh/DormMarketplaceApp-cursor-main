@@ -707,7 +707,7 @@ const HomeScreen = ({ navigation, route }) => {
           
           if (typeof YandexAdsModule.loadBanner === 'function') {
             console.log('[HomeScreen] Loading banner with ID: R-M-16546684-1');
-            await YandexAdsModule.loadBanner('R-M-16546684-1');
+            await YandexAdsModule.loadBanner('demo-banner-yandex');
             console.log('[HomeScreen] Banner loaded successfully, setting adLoaded to true');
             setAdLoaded(true);
           } else {
@@ -728,7 +728,7 @@ const HomeScreen = ({ navigation, route }) => {
   const showInterstitialAd = async () => {
     try {
       console.log('[HomeScreen] Loading interstitial ad');
-      await YandexAdsModule.loadInterstitial('R-M-16546684-1'); // Updated to use your actual ad unit ID
+      await YandexAdsModule.loadInterstitial('demo-banner-yandex'); // Updated to use your actual ad unit ID
       console.log('[HomeScreen] Showing interstitial ad');
       await YandexAdsModule.showInterstitial();
     } catch (error) {
