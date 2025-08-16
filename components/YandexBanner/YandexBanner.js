@@ -1,12 +1,12 @@
 // components/YandexBanner/YandexBanner.js
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Dimensions, Text, TouchableOpacity, Linking } from 'react-native';
-import { MobileAds, BannerView, BannerAdSize } from 'yandex-mobile-ads';
+import { MobileAds, BannerView, BannerAdSize, AdRequestConfiguration } from 'yandex-mobile-ads';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 // Use actual Yandex ad unit ID
-const AD_UNIT_ID = 'R-M-16546684-1';
+const AD_UNIT_ID = 'demo-banner-yandex';
 
 // Real Yandex banner component using official yandex-mobile-ads package
 const YandexBanner = ({ onAdLoaded }) => {
@@ -27,7 +27,7 @@ const YandexBanner = ({ onAdLoaded }) => {
           setAdError('SDK initialization timeout');
           setIsLoading(false);
         }, 10000); // 10 second timeout
-        
+        AdRequestConfiguration.setUserConsent(true);
         // Initialize the SDK
         await MobileAds.initialize();
         clearTimeout(initTimeout);
