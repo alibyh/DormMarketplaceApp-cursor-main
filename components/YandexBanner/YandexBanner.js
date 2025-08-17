@@ -6,7 +6,7 @@ import { MobileAds, BannerView, BannerAdSize } from 'yandex-mobile-ads';
 const { width: screenWidth } = Dimensions.get('window');
 
 // Try different demo ad unit IDs
-const AD_UNIT_ID = 'demo-banner-yandex'; // Official demo banner ID from yandex-mobile-ads package
+const AD_UNIT_ID = 'R-M-DEMO-320x50'; // Try the standard demo banner ID again
 
 // Real Yandex banner component using official yandex-mobile-ads package
 const YandexBanner = ({ onAdLoaded }) => {
@@ -83,6 +83,7 @@ const YandexBanner = ({ onAdLoaded }) => {
   // Handle ad loading failure
   const handleAdFailedToLoad = (error) => {
     console.error('[YandexBanner] Banner ad failed to load:', error);
+    console.error('[YandexBanner] Error object:', JSON.stringify(error, null, 2));
     setAdError(error?.message || 'Failed to load ad');
     setDebugInfo('Ad failed to load: ' + (error?.message || 'Unknown error'));
     setIsLoading(false);
@@ -145,7 +146,10 @@ const YandexBanner = ({ onAdLoaded }) => {
             handleAdLoaded();
           }}
           onAdFailedToLoad={(error) => {
-            console.log('[YandexBanner] BannerView onAdFailedToLoad callback triggered:', error);
+            console.log('[YandexBanner] BannerView onAdFailedToLoad callback triggered');
+            console.log('[YandexBanner] Error details:', error);
+            console.log('[YandexBanner] Error type:', typeof error);
+            console.log('[YandexBanner] Error keys:', Object.keys(error || {}));
             handleAdFailedToLoad(error);
           }}
           onAdClicked={() => {
