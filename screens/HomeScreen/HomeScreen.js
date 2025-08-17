@@ -26,8 +26,6 @@ import RetryView from '../../components/RetryView/RetryView';
 
 // Add these imports at the top
 import { Alert } from 'react-native';
-import { NativeModules } from 'react-native';
-const { YandexAdsModule } = NativeModules;
 import YandexBanner from '../../components/YandexBanner/YandexBanner';
 
 // Add this before the HomeScreen component
@@ -697,44 +695,9 @@ const HomeScreen = ({ navigation, route }) => {
     );
   }, [isSortModalVisible, sortType, t]);
 
-  useEffect(() => {
-    const initAds = async () => {
-      try {
-        console.log('[HomeScreen] Initializing Yandex Ads SDK');
-        if (YandexAdsModule && typeof YandexAdsModule.initializeSDK === 'function') {
-          await YandexAdsModule.initializeSDK();
-          console.log('[HomeScreen] Yandex SDK initialized successfully');
-          
-          if (typeof YandexAdsModule.loadBanner === 'function') {
-            console.log('[HomeScreen] Loading banner with ID: R-M-16546684-1');
-            await YandexAdsModule.loadBanner('demo-banner-yandex');
-            console.log('[HomeScreen] Banner loaded successfully, setting adLoaded to true');
-            setAdLoaded(true);
-          } else {
-            console.error('[HomeScreen] YandexAdsModule.loadBanner is not a function');
-          }
-        } else {
-          console.error('[HomeScreen] YandexAdsModule or initializeSDK not available:', YandexAdsModule);
-        }
-      } catch (error) {
-        console.error('[HomeScreen] Ad initialization failed:', error);
-      }
-    };
+  // Removed conflicting ad initialization - now handled in YandexBanner component
 
-    initAds();
-  }, []);
-
-  // Add this function to show interstitial ads
-  const showInterstitialAd = async () => {
-    try {
-      console.log('[HomeScreen] Loading interstitial ad');
-      await YandexAdsModule.loadInterstitial('demo-banner-yandex'); // Updated to use your actual ad unit ID
-      console.log('[HomeScreen] Showing interstitial ad');
-      await YandexAdsModule.showInterstitial();
-    } catch (error) {
-      console.error('[HomeScreen] Interstitial ad failed:', error);
-    }
-  };
+  // Removed unused interstitial ad function
 
   if (isLoading) {
     return <LoadingState message={t('loadingProducts')} />;
