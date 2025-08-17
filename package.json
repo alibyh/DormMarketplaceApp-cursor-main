@@ -50,7 +50,7 @@
     "react-native-gesture-handler": "~2.24.0",
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.10.0",
-    "yandex-mobile-ads": "^7.13.0",
+    "yandex-mobile-ads": "^7.14.0",
     "yup": "^1.6.1"
   },
   "devDependencies": {
@@ -75,8 +75,8 @@
   },
   "resolutions": {
     "hermes-engine": "0.76.7",
-    "react": "18.3.1",
-    "react-native": "0.76.7"
+    "react": "19.0.0",
+    "react-native": "0.79.2"
   },
   "patchedDependencies": {
     "hermes-engine@0.76.7": "patches/hermes-engine+0.76.7.patch"

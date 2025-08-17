@@ -1,174 +1,86 @@
 // components/YandexBanner/YandexBanner.js
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Dimensions, Text, TouchableOpacity, Linking } from 'react-native';
-import { MobileAds, BannerView, BannerAdSize } from 'yandex-mobile-ads';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Dimensions } from 'react-native';
+import { MobileAds, BannerView, BannerAdSize, AdRequest } from 'yandex-mobile-ads';
 
-const { width: screenWidth } = Dimensions.get('window');
+const AD_UNIT_ID = 'demo-banner-yandex';
 
-// Try different demo ad unit IDs
-const AD_UNIT_ID = 'R-M-DEMO-320x50'; // Try the standard demo banner ID again
+function YandexBanner({ onAdLoaded }) {
+  const [adSize, setAdSize] = useState(null);
+  const [adRequest, setAdRequest] = useState(null);
+  const [status, setStatus] = useState('init'); // init | ready | loaded | error
+  const [error, setError] = useState(null);
+  const mounted = useRef(true);
 
-// Real Yandex banner component using official yandex-mobile-ads package
-const YandexBanner = ({ onAdLoaded }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [adError, setAdError] = useState(null);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [showFallback, setShowFallback] = useState(false);
-  const [debugInfo, setDebugInfo] = useState('');
-  
-  // Initialize Yandex Ads SDK
+  useEffect(() => () => { mounted.current = false; }, []);
+
   useEffect(() => {
-    const initialize = async () => {
+    (async () => {
       try {
-        console.log('[YandexBanner] Starting Yandex Mobile Ads SDK initialization');
-        setDebugInfo('Starting SDK initialization...');
-        
-        // Add a timeout to prevent infinite loading
-        const initTimeout = setTimeout(() => {
-          console.error('[YandexBanner] SDK initialization timeout');
-          setAdError('SDK initialization timeout');
-          setDebugInfo('SDK initialization timeout after 10s');
-          setIsLoading(false);
-        }, 10000); // 10 second timeout
-
-        // Enable logging first
-        console.log('[YandexBanner] Enabling SDK logging...');
-        MobileAds.enableLogging();
-        
-        // Initialize the SDK (removed AdRequestConfiguration.setUserConsent)
-        console.log('[YandexBanner] Calling MobileAds.initialize()...');
+        MobileAds.enableLogging?.();
         await MobileAds.initialize();
-        clearTimeout(initTimeout);
-        
-        console.log('[YandexBanner] Yandex Mobile Ads SDK initialized successfully');
-        setDebugInfo('SDK initialized successfully');
-        setIsInitialized(true);
-        
-        // Set up a fallback timeout in case the BannerView never loads
-        setTimeout(() => {
-          if (isLoading) {
-            console.log('[YandexBanner] BannerView timeout, showing fallback');
-            setDebugInfo('BannerView timeout after 8s - showing fallback');
-            setShowFallback(true);
-            setIsLoading(false);
-            if (onAdLoaded) {
-              console.log('[YandexBanner] Calling onAdLoaded for auto-sliding (fallback)');
-              onAdLoaded();
-            }
-          }
-        }, 8000); // 8 second timeout for the actual ad
-        
-      } catch (error) {
-        console.error('[YandexBanner] Failed to initialize Yandex Mobile Ads SDK:', error);
-        console.error('[YandexBanner] Error details:', error.stack);
-        setAdError('Failed to initialize SDK: ' + (error.message || 'Unknown error'));
-        setDebugInfo('SDK initialization failed: ' + (error.message || 'Unknown error'));
-        setIsLoading(false);
+
+        const width = Math.min(Dimensions.get('window').width, 360);
+        // Use SDK factory — not a plain object
+        const size = await BannerAdSize.inlineSize(width, 250);
+
+        if (!mounted.current) return;
+        setAdSize(size);
+        setAdRequest(new AdRequest());
+        setStatus('ready');
+      } catch (e) {
+        if (!mounted.current) return;
+        setError(e?.message || 'SDK init failed');
+        setStatus('error');
       }
-    };
-    
-    initialize();
-  }, [onAdLoaded]);
+    })();
+  }, []);
 
-  // Handle ad loading success
-  const handleAdLoaded = () => {
-    console.log('[YandexBanner] Banner ad loaded successfully');
-    setDebugInfo('Real ad loaded successfully!');
-    setIsLoading(false);
-    if (onAdLoaded) {
-      onAdLoaded();
-    }
-  };
-
-  // Handle ad loading failure
-  const handleAdFailedToLoad = (error) => {
-    console.error('[YandexBanner] Banner ad failed to load:', error);
-    console.error('[YandexBanner] Error object:', JSON.stringify(error, null, 2));
-    setAdError(error?.message || 'Failed to load ad');
-    setDebugInfo('Ad failed to load: ' + (error?.message || 'Unknown error'));
-    setIsLoading(false);
-  };
-
-  // Show loading state
-  if (isLoading && !adError) {
+  if (status === 'init') {
     return (
-      <View style={styles.container}>
-        <View style={styles.placeholderBanner}>
-          <Text style={styles.placeholderText}>
-            Loading Ad...
-          </Text>
-          <Text style={styles.debugText}>
-            {debugInfo}
-          </Text>
-        </View>
+      <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Loading ad…</Text>
       </View>
     );
   }
 
-  // Show error state or fallback
-  if (adError || showFallback) {
+  if (status === 'error') {
+    // If you need a clickable fallback, do it here instead of spoofing an ad everywhere
     return (
-      <View style={styles.container}>
-        <TouchableOpacity 
-          style={styles.bannerView}
-          onPress={() => Linking.openURL('https://yandex.ru')}
-        >
-          <View style={styles.adContent}>
-            <Text style={styles.adText}>Yandex Advertisement</Text>
-            <Text style={styles.adSubtext}>
-              {adError ? 'Fallback Mode' : 'Sponsored Content'} - Tap to learn more
-            </Text>
-            <Text style={styles.debugText}>
-              Debug: {debugInfo}
-            </Text>
-          </View>
-          <View style={styles.adIndicator}>
-            <Text style={styles.adIndicatorText}>Ad</Text>
-          </View>
-        </TouchableOpacity>
+      <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Ad error: {error}</Text>
       </View>
     );
   }
 
-  // Show the real Yandex banner ad using official component
-  if (isInitialized) {
-    console.log('[YandexBanner] Rendering BannerView with ad unit:', AD_UNIT_ID);
-    setDebugInfo('Rendering BannerView with ID: ' + AD_UNIT_ID);
-    
+  if (!adSize || !adRequest) {
     return (
-      <View style={styles.container}>
-        <BannerView
-          adUnitId={AD_UNIT_ID}
-          adSize={BannerAdSize.flexibleBanner(screenWidth - 32, 50)}
-          style={styles.bannerView}
-          onAdLoaded={() => {
-            console.log('[YandexBanner] BannerView onAdLoaded callback triggered');
-            handleAdLoaded();
-          }}
-          onAdFailedToLoad={(error) => {
-            console.log('[YandexBanner] BannerView onAdFailedToLoad callback triggered');
-            console.log('[YandexBanner] Error details:', error);
-            console.log('[YandexBanner] Error type:', typeof error);
-            console.log('[YandexBanner] Error keys:', Object.keys(error || {}));
-            handleAdFailedToLoad(error);
-          }}
-          onAdClicked={() => {
-            console.log('[YandexBanner] Banner ad clicked');
-          }}
-        />
-        {/* Add a timeout fallback in case the BannerView never loads */}
-        {isLoading && (
-          <View style={styles.fallbackContainer}>
-            <Text style={styles.fallbackText}>Real ad loading...</Text>
-            <Text style={styles.debugText}>{debugInfo}</Text>
-          </View>
-        )}
+      <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
+        <Text>Preparing…</Text>
       </View>
     );
   }
 
-  return null;
-};
+  return (
+    <BannerView
+      adUnitId={AD_UNIT_ID}
+      size={adSize}
+      adRequest={adRequest}
+      onAdLoaded={() => {
+        if (!mounted.current) return;
+        setStatus('loaded');
+        onAdLoaded && onAdLoaded();
+      }}
+      onAdFailedToLoad={e => {
+        if (!mounted.current) return;
+        setStatus('error');
+        setError(e?.nativeEvent?.description || 'Failed to load');
+      }}
+      onAdClicked={() => {}}
+    />
+  );
+}
+
 
 const styles = StyleSheet.create({
   container: {
@@ -249,6 +161,26 @@ const styles = StyleSheet.create({
   fallbackText: {
     color: '#666',
     fontSize: 12,
+  },
+  consoleLogsContainer: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    padding: 10,
+    borderRadius: 8,
+    zIndex: 10,
+  },
+  consoleLogsTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  consoleLogText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    marginBottom: 2,
   },
 });
 

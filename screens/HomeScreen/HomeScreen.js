@@ -526,14 +526,6 @@ const HomeScreen = ({ navigation, route }) => {
           const currentScrollX = bannerScrollX._value || 0;
           const currentIndex = Math.round(currentScrollX / screenWidth);
           const nextIndex = (currentIndex + 1) % totalItems;
-          
-          console.log('[HomeScreen] Auto-sliding:', { 
-            currentIndex, 
-            nextIndex, 
-            totalItems,
-            screenWidth
-          });
-
           try {
             bannerFlatListRef.current.scrollToOffset({
               offset: nextIndex * screenWidth,
@@ -549,7 +541,7 @@ const HomeScreen = ({ navigation, route }) => {
             hasFlatListRef: !!bannerFlatListRef.current
           });
         }
-      }, 3000);
+      }, 300000);
 
       return intervalId;
     };

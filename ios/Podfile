@@ -16,8 +16,8 @@ target 'Marsa' do
   use_expo_modules!
 
   # 🔒 PIN THESE — this is the important part
-  pod 'YandexMobileAds', '7.13.0'
-  pod 'AppMetricaCore',  '5.10.0'
+  pod 'YandexMobileAds', '7.15.1'
+  # pod 'AppMetricaCore',  '5.10.0'
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
     config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"]
