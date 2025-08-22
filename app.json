@@ -15,10 +15,10 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.alibyh.DormMarketplaceApp",
+      "buildNumber": "3",
       "infoPlist": {
-        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you.",
         "NSLocationWhenInUseUsageDescription": "Your location is used to deliver relevant ads.",
         "NSLocationAlwaysUsageDescription": "Your location is used to deliver relevant ads.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Your location is used to deliver relevant ads.",
