@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../context/ThemeContext';
 import supabase from '../../services/supabaseConfig';
 import { getProductById } from '../../services/productService';
 import { 
@@ -92,6 +93,8 @@ const getImageUrlForProductType = (imagePath, productType) => {
 
 const ProductDetailsScreen = ({ route, navigation }) => {
   const { t } = useTranslation();
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
   const [modalVisible, setModalVisible] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const { productId, type } = route.params;
@@ -238,7 +241,7 @@ const ProductDetailsScreen = ({ route, navigation }) => {
             style={styles.headerAvatar}
             defaultSource={require('../../assets/default-avatar.png')}
           />
-          <Text style={styles.headerText}>{sellerName}</Text>
+          <Text style={[styles.headerText, { color: colors.headerText }]}>{sellerName}</Text>
         </View>
       ),
       headerLeft: () => (
@@ -246,7 +249,7 @@ const ProductDetailsScreen = ({ route, navigation }) => {
           style={styles.headerButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={colors.headerText} />
         </TouchableOpacity>
       ),
       headerRight: () => (
@@ -254,18 +257,18 @@ const ProductDetailsScreen = ({ route, navigation }) => {
           style={styles.headerButton}
           onPress={fetchProductDetails}
         >
-          <Ionicons name="refresh" size={24} color="#fff" />
+          <Ionicons name="refresh" size={24} color={colors.headerText} />
         </TouchableOpacity>
       ),
       headerStyle: {
-        backgroundColor: '#104d59',
+        backgroundColor: colors.headerBackground,
         elevation: Platform.OS === 'android' ? 2 : 0,
         shadowOpacity: Platform.OS === 'ios' ? 0.3 : 0,
         shadowOffset: Platform.OS === 'ios' ? { width: 0, height: 2 } : undefined,
       },
-      headerTintColor: '#fff',
+      headerTintColor: colors.headerText,
     });
-  }, [navigation, seller, sellerName, fetchProductDetails]);
+  }, [navigation, seller, sellerName, fetchProductDetails, colors]);
 
   // Handle messaging the seller
   const handleMessageSeller = async () => {
@@ -285,7 +288,7 @@ const ProductDetailsScreen = ({ route, navigation }) => {
       
       // Can't message yourself
       if (currentUser.id === product.seller_id) {
-        Alert.alert(t('Cannot Message Yourself'), t('You cannot message yourself'));
+        Alert.alert(t('Cannot Message Yourself'), t('Self message error'));
         return;
       }
       
@@ -346,7 +349,7 @@ const ProductDetailsScreen = ({ route, navigation }) => {
           if (supported) {
             return Linking.openURL(phoneUrl);
           }
-          Alert.alert(t('Error'), t('Phone calls not supported on this device'));
+          Alert.alert(t('error'), t('phoneCallsNotSupported'));
         })
         .catch(err => console.error('Error opening phone app:', err));
     }
@@ -367,25 +370,25 @@ const ProductDetailsScreen = ({ route, navigation }) => {
   const renderContent = () => {
     if (isLoading) {
       return (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#ff5722" />
-          <Text style={styles.loadingText}>{t('Loading...')}</Text>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('Loading...')}</Text>
         </View>
       );
     }
 
     if (!product) {
       return (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.errorText}>{t('Product not found')}</Text>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <Text style={[styles.errorText, { color: colors.error }]}>{t('Product not found')}</Text>
         </View>
       );
     }
 
     return (
-      <ScrollView style={styles.container}>
+      <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Photo Carousel */}
-        <View style={styles.photoCarouselContainer}>
+        <View style={[styles.photoCarouselContainer, { backgroundColor: colors.card }]}>
           {productImages && productImages.length > 0 ? (
             <FlatList
               data={productImages}
@@ -462,8 +465,8 @@ const ProductDetailsScreen = ({ route, navigation }) => {
           )}
 
           {productImages && productImages.length > 1 && (
-            <View style={styles.photoCounterContainer}>
-              <Text style={styles.photoCounterText}>
+            <View style={[styles.photoCounterContainer, { backgroundColor: colors.overlay }]}>
+              <Text style={[styles.photoCounterText, { color: colors.headerText }]}>
                 {currentPhotoIndex + 1}/{productImages.length}
               </Text>
             </View>
@@ -471,66 +474,66 @@ const ProductDetailsScreen = ({ route, navigation }) => {
 
           {productImages && productImages.length > 0 && (
             <TouchableOpacity
-              style={styles.imageZoomButton}
+              style={[styles.imageZoomButton, { backgroundColor: colors.overlay }]}
               onPress={() => setModalVisible(true)}
             >
-              <Ionicons name="expand" size={24} color="#fff" />
+              <Ionicons name="expand" size={24} color={colors.headerText} />
             </TouchableOpacity>
           )}
         </View>
 
-        <View style={styles.detailsContainer}>
-          <Text style={styles.productName}>{product?.name || t('No name available')}</Text>
+        <View style={[styles.detailsContainer, { backgroundColor: colors.card }]}>
+          <Text style={[styles.productName, { color: colors.text }]}>{product?.name || t('No name available')}</Text>
 
           <View style={styles.priceContainer}>
-            <Text style={styles.price}>
-              {t('₽{{price}}', { price: product?.price || 0 })}
+            <Text style={[styles.price, { color: colors.primary }]}>
+              ₽{Math.round(product?.price || 0)}
             </Text>
-            <Text style={styles.seller}>
+            <Text style={[styles.seller, { color: colors.textSecondary }]}>
               {t('Posted by {{name}}', { name: sellerName })}
             </Text>
           </View>
 
-          <View style={styles.locationInfo}>
-            <Ionicons name="location" size={20} color="#666" />
-            <Text style={styles.dormText}>
+          <View style={[styles.locationInfo, { backgroundColor: colors.surface }]}>
+            <Ionicons name="location" size={20} color={colors.textSecondary} />
+            <Text style={[styles.dormText, { color: colors.text }]}>
               {product?.dorm || t('Location not specified')}
             </Text>
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          <Text style={styles.descriptionTitle}>{t('About this item')}</Text>
-          <Text style={styles.description}>
+          <Text style={[styles.descriptionTitle, { color: colors.text }]}>{t('About this item')}</Text>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>
             {product?.description || t('No description available')}
           </Text>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-          <Text style={styles.contactTitle}>{t('Contact Optionssss')}</Text>
+          <Text style={[styles.contactTitle, { color: colors.text }]}>{t('Contact Options')}</Text>
           <View style={styles.contactButtonsContainer}>
             <TouchableOpacity
-              style={[styles.contactButton, styles.messageButton]}
+              style={[styles.contactButton, styles.messageButton, { backgroundColor: colors.primary }]}
               onPress={handleMessageSeller}
               disabled={isMessaging}
             >
               {isMessaging ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={colors.headerText} />
               ) : (
                 <>
-                  <Ionicons name="chatbubble" size={22} color="#fff" />
-                  <Text style={styles.contactButtonText}>{t('Message')}</Text>
+                  <Ionicons name="chatbubble" size={22} color={colors.headerText} />
+                  <Text style={[styles.contactButtonText, { color: colors.headerText }]}>{t('Message')}</Text>
                 </>
               )}
             </TouchableOpacity>
 
             {seller?.allow_phone_contact && seller?.phone_number && (
               <TouchableOpacity
-                style={[styles.contactButton, styles.callButton]}
+                style={[styles.contactButton, styles.callButton, { backgroundColor: colors.secondary }]}
                 onPress={handlePhoneCall}
               >
-                <Ionicons name="call" size={22} color="#fff" />
-                <Text style={styles.contactButtonText}>{t('Call')}</Text>
+                <Ionicons name="call" size={22} color={colors.headerText} />
+                <Text style={[styles.contactButtonText, { color: colors.headerText }]}>{t('Call')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -620,20 +623,20 @@ const ProductDetailsScreen = ({ route, navigation }) => {
       loadingMessage={t('loadingProduct')}
       errorMessage={error?.message || t('errorLoadingProduct')}
     >
-      <View style={styles.mainContainer}>
+      <View style={[styles.mainContainer, { backgroundColor: colors.background }]}>
         {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#ff5722" />
-            <Text style={styles.loadingText}>{t('loadingProduct')}</Text>
+          <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('loadingProduct')}</Text>
           </View>
         ) : error ? (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{t('errorLoadingProduct')}</Text>
+          <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
+            <Text style={[styles.errorText, { color: colors.error }]}>{t('errorLoadingProduct')}</Text>
             <TouchableOpacity 
-              style={styles.retryButton}
+              style={[styles.retryButton, { backgroundColor: colors.primary }]}
               onPress={fetchProductDetails}
             >
-              <Text style={styles.retryButtonText}>{t('retry')}</Text>
+              <Text style={[styles.retryButtonText, { color: colors.headerText }]}>{t('retry')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -651,7 +654,6 @@ const ProductDetailsScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   mainContainer: {
     flex: 1,
-    backgroundColor: 'white',
   },
   container: {
     flex: 1,
@@ -665,21 +667,18 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
     fontWeight: '500',
   },
   photoCarouselContainer: {
     height: width * 0.85,
     width: width,
     position: 'relative',
-    backgroundColor: '#104d59',
     borderBottomLeftRadius: 25,
     borderBottomRightRadius: 25,
     borderTopRightRadius: 25,
     borderTopLeftRadius: 25,
     overflow: 'hidden',
     elevation: 2,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -697,7 +696,6 @@ const styles = StyleSheet.create({
   productImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#f0f0f0',
   },
   nextImagePeek: {
     position: 'absolute',
@@ -716,13 +714,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 15,
     right: 15,
-    backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
   photoCounterText: {
-    color: 'white',
     fontSize: 13,
     fontWeight: 'bold',
   },
@@ -730,71 +726,60 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 15,
     right: 15,
-    backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 24,
     padding: 10,
   },
   detailsContainer: {
     padding: 20,
-    backgroundColor: '#fff',
     flex: 1,
   },
   productName: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#1a1a1a',
     marginBottom: 15,
   },
   priceContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 10,
   },
   price: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#ff5722',
   },
   seller: {
     fontSize: 14,
-    color: '#666',
     fontWeight: '500',
   },
   locationInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
     padding: 10,
     borderRadius: 8,
-    marginBottom: 15,
+    marginBottom: 0,
   },
   dormText: {
     marginLeft: 8,
     fontSize: 15,
-    color: '#444',
     fontWeight: '500',
   },
   divider: {
     height: 1,
-    backgroundColor: '#eee',
     marginVertical: 20,
   },
   descriptionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
+    marginBottom: 5,
   },
   description: {
     fontSize: 16,
     lineHeight: 24,
-    color: '#444',
   },
   contactTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
     marginBottom: 15,
   },
   contactButtonsContainer: {
@@ -810,19 +795,15 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 12,
     elevation: 2,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
   },
   messageButton: {
-    backgroundColor: 'red',
   },
   callButton: {
-    backgroundColor: '#2196F3',
   },
   contactButtonText: {
-    color: 'red',
     fontWeight: '600',
     fontSize: 16,
     marginLeft: 8,
@@ -902,7 +883,6 @@ const styles = StyleSheet.create({
     marginLeft: Platform.OS === 'ios' ? -20 : 0,
   },
   headerText: {
-    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
     marginLeft: 10,
@@ -911,7 +891,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#e1e1e1',
   },
   headerButton: {
     paddingHorizontal: 15,
@@ -920,7 +899,6 @@ const styles = StyleSheet.create({
   },
   mainProductImage: {
     borderWidth: 2,
-    borderColor: '#ff5722',  // Bright orange border for main image
   },
 });
 

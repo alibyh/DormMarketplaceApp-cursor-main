@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Marsa",
-    "slug": "DormMarketplaceApp",
+    "name": "u-ShopSfu",
+    "slug": "u-ShopSfu",
     "version": "1.0.0",
     "jsEngine": "jsc",
     "orientation": "portrait",
@@ -61,7 +61,7 @@
     "owner": "alibyh3",
     "extra": {
       "eas": {
-        "projectId": "fe77daf6-f6e2-40c4-adc8-25f17aab961f"
+        "projectId": "79cc41f1-7020-4f25-92fc-3fb09813399f"
       }
     }
   }

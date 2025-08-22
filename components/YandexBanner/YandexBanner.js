@@ -1,86 +1,60 @@
 // components/YandexBanner/YandexBanner.js
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Dimensions } from 'react-native';
-import { MobileAds, BannerView, BannerAdSize, AdRequest } from 'yandex-mobile-ads';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, Dimensions, Text, TouchableOpacity, Linking } from 'react-native';
 
-const AD_UNIT_ID = 'demo-banner-yandex';
+const { width: screenWidth } = Dimensions.get('window');
 
-function YandexBanner({ onAdLoaded }) {
-  const [adSize, setAdSize] = useState(null);
-  const [adRequest, setAdRequest] = useState(null);
-  const [status, setStatus] = useState('init'); // init | ready | loaded | error
-  const [error, setError] = useState(null);
-  const mounted = useRef(true);
-
-  useEffect(() => () => { mounted.current = false; }, []);
+// Temporary placeholder banner while Yandex SDK is being fixed
+const YandexBanner = ({ onAdLoaded }) => {
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
-      try {
-        MobileAds.enableLogging?.();
-        await MobileAds.initialize();
-
-        const width = Math.min(Dimensions.get('window').width, 360);
-        // Use SDK factory — not a plain object
-        const size = await BannerAdSize.inlineSize(width, 250);
-
-        if (!mounted.current) return;
-        setAdSize(size);
-        setAdRequest(new AdRequest());
-        setStatus('ready');
-      } catch (e) {
-        if (!mounted.current) return;
-        setError(e?.message || 'SDK init failed');
-        setStatus('error');
+    // Simulate loading
+    setTimeout(() => {
+      setIsLoading(false);
+      if (onAdLoaded) {
+        onAdLoaded();
       }
-    })();
-  }, []);
+    }, 2000);
+  }, [onAdLoaded]);
 
-  if (status === 'init') {
+  if (isLoading) {
     return (
-      <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
-        <Text>Loading ad…</Text>
-      </View>
-    );
-  }
-
-  if (status === 'error') {
-    // If you need a clickable fallback, do it here instead of spoofing an ad everywhere
-    return (
-      <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
-        <Text>Ad error: {error}</Text>
-      </View>
-    );
-  }
-
-  if (!adSize || !adRequest) {
-    return (
-      <View style={{ height: 180, justifyContent: 'center', alignItems: 'center' }}>
-        <Text>Preparing…</Text>
+      <View style={styles.container}>
+        <View style={styles.placeholderBanner}>
+          <Text style={styles.placeholderText}>
+            Loading Ad...
+          </Text>
+          <Text style={styles.debugText}>
+            Yandex SDK temporarily disabled due to build conflicts
+          </Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <BannerView
-      adUnitId={AD_UNIT_ID}
-      size={adSize}
-      adRequest={adRequest}
-      onAdLoaded={() => {
-        if (!mounted.current) return;
-        setStatus('loaded');
-        onAdLoaded && onAdLoaded();
-      }}
-      onAdFailedToLoad={e => {
-        if (!mounted.current) return;
-        setStatus('error');
-        setError(e?.nativeEvent?.description || 'Failed to load');
-      }}
-      onAdClicked={() => {}}
-    />
+    <View style={styles.container}>
+      <TouchableOpacity 
+        style={styles.bannerView}
+        onPress={() => Linking.openURL('https://yandex.ru')}
+      >
+        <View style={styles.adContent}>
+          <Text style={styles.adText}>Yandex Advertisement</Text>
+          <Text style={styles.adSubtext}>
+            SDK temporarily disabled - Tap to learn more
+          </Text>
+          <Text style={styles.debugText}>
+            Build conflicts being resolved
+          </Text>
+        </View>
+        <View style={styles.adIndicator}>
+          <Text style={styles.adIndicatorText}>Ad</Text>
+        </View>
+      </TouchableOpacity>
+    </View>
   );
-}
-
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -88,39 +62,7 @@ const styles = StyleSheet.create({
     height: 60,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  bannerView: {
-    width: screenWidth - 32,
-    height: 50,
-    backgroundColor: '#4285F4',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  adContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-  },
-  adText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  adSubtext: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  debugText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    marginTop: 2,
-    textAlign: 'center',
+    backgroundColor: '#f5f5f5'
   },
   placeholderBanner: {
     width: screenWidth - 32,
@@ -128,60 +70,57 @@ const styles = StyleSheet.create({
     backgroundColor: '#e0e0e0',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 8
   },
   placeholderText: {
     color: '#666',
-    fontSize: 14,
+    fontSize: 14
+  },
+  bannerView: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    height: '100%',
+    paddingHorizontal: 10,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ccc'
+  },
+  adContent: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 5
+  },
+  adText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333'
+  },
+  adSubtext: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2
   },
   adIndicator: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ff0000',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
   adIndicatorText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  fallbackContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-  },
-  fallbackText: {
-    color: '#666',
-    fontSize: 12,
-  },
-  consoleLogsContainer: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    padding: 10,
-    borderRadius: 8,
-    zIndex: 10,
-  },
-  consoleLogsTitle: {
-    color: '#FFFFFF',
+    color: '#fff',
     fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 5,
+    fontWeight: 'bold'
   },
-  consoleLogText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    marginBottom: 2,
-  },
+  debugText: {
+    fontSize: 10,
+    color: '#999',
+    marginTop: 5
+  }
 });
 
 export default YandexBanner;

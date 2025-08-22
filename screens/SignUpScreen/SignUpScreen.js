@@ -9,12 +9,14 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Image
+  Image,
+  ActivityIndicator
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../context/ThemeContext';
 import { signUp, createInitialProfile } from '../../services/authService';
 import supabase from '../../services/supabaseConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,6 +36,8 @@ const SIGNUP_ERROR_CODES = {
 
 const SignUpScreen = ({ navigation }) => {
   const { t } = useTranslation();
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
   const [formData, setFormData] = useState({
     name: '',
     username: '',
@@ -239,171 +243,309 @@ const SignUpScreen = ({ navigation }) => {
       errorMessage={error}
     >
       <KeyboardAvoidingView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContainer}
+          contentContainerStyle={[styles.scrollContainer, { backgroundColor: colors.background }]}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.title}>{t('createAccount')}</Text>
-          {error && <Text style={styles.errorText}>{error}</Text>}
+          {/* Header Section */}
+          <View style={[styles.headerSection, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+            <Text style={[styles.title, { color: colors.primary }]}>{t('createAccount')}</Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              {t('joinCommunity')}
+            </Text>
+          </View>
+
+          {error && (
+            <View style={[styles.errorContainer, { backgroundColor: colors.error + '15', borderColor: colors.error }]}>
+              <Ionicons name="alert-circle" size={20} color={colors.error} />
+              <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+            </View>
+          )}
 
           {/* Profile Photo Upload */}
-          <TouchableOpacity
-            style={styles.profilePhotoContainer}
-            onPress={pickImage}
-          >
-            {profilePhotoPreview ? (
-              <Image
-                source={{ uri: profilePhotoPreview }}
-                style={styles.profilePhoto}
+          <View style={[styles.profileSection, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('profilePhoto')}</Text>
+            <TouchableOpacity
+              style={[styles.profilePhotoContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={pickImage}
+            >
+              {profilePhotoPreview ? (
+                <Image
+                  source={{ uri: profilePhotoPreview }}
+                  style={styles.profilePhoto}
+                />
+              ) : (
+                <View style={styles.profilePhotoPlaceholder}>
+                  <View style={[styles.cameraIconContainer, { backgroundColor: colors.primary + '20' }]}>
+                    <Ionicons name="camera" size={30} color={colors.primary} />
+                  </View>
+                  <Text style={[styles.profilePhotoText, { color: colors.textSecondary }]}>{t('uploadProfilePhoto')}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Personal Information Section */}
+          <View style={[styles.section, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('personalInformation')}</Text>
+            
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('name')}</Text>
+              <TextInput
+                style={[
+                  styles.modernInput, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.name && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
+                placeholder={t('name')}
+                placeholderTextColor={colors.placeholder}
+                value={formData.name}
+                onChangeText={(text) => {
+                  updateFormData('name', text);
+                  setFormErrors(prev => ({ ...prev, name: null }));
+                }}
               />
+              {formErrors.name && (
+                <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.name}</Text>
+              )}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('username')}</Text>
+              <TextInput
+                style={[
+                  styles.modernInput, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.username && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
+                placeholder={t('username')}
+                placeholderTextColor={colors.placeholder}
+                value={formData.username}
+                onChangeText={(text) => {
+                  updateFormData('username', text);
+                  setFormErrors(prev => ({ ...prev, username: null }));
+                }}
+                autoCapitalize="none"
+              />
+              {formErrors.username && (
+                <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.username}</Text>
+              )}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('email')}</Text>
+              <TextInput
+                style={[
+                  styles.modernInput, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.email && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
+                placeholder={t('email')}
+                placeholderTextColor={colors.placeholder}
+                value={formData.email}
+                onChangeText={(text) => {
+                  updateFormData('email', text);
+                  setFormErrors(prev => ({ ...prev, email: null }));
+                }}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+              {formErrors.email && (
+                <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.email}</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Contact Information Section */}
+          <View style={[styles.section, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('contactInformation')}</Text>
+            
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('phoneNumber')}</Text>
+              <TextInput
+                style={[
+                  styles.modernInput, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.phoneNumber && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
+                placeholder={t('phoneNumber')}
+                placeholderTextColor={colors.placeholder}
+                value={formData.phoneNumber}
+                onChangeText={(text) => {
+                  updateFormData('phoneNumber', text);
+                  setFormErrors(prev => ({ ...prev, phoneNumber: null }));
+                }}
+                keyboardType="phone-pad"
+              />
+              {formErrors.phoneNumber && (
+                <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.phoneNumber}</Text>
+              )}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('dormNumber')}</Text>
+              <TextInput
+                style={[
+                  styles.modernInput, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.dormNumber && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
+                placeholder={t('dormNumber')}
+                placeholderTextColor={colors.placeholder}
+                value={formData.dormNumber}
+                onChangeText={(text) => {
+                  updateFormData('dormNumber', text);
+                  setFormErrors(prev => ({ ...prev, dormNumber: null }));
+                }}
+              />
+              {formErrors.dormNumber && (
+                <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.dormNumber}</Text>
+              )}
+            </View>
+
+            {/* Contact Preference Section */}
+            <View style={styles.contactPreferenceContainer}>
+              <Text style={[styles.contactPreferenceTitle, { color: colors.text }]}>
+                {t('allowCall')}
+              </Text>
+              <View style={styles.contactButtonsContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.modernContactButton, 
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    formData.contactByPhone === 'yes' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                  ]}
+                  onPress={() => updateFormData('contactByPhone', 'yes')}
+                >
+                  <Ionicons 
+                    name={formData.contactByPhone === 'yes' ? 'checkmark-circle' : 'ellipse-outline'} 
+                    size={20} 
+                    color={formData.contactByPhone === 'yes' ? colors.headerText : colors.textSecondary} 
+                  />
+                  <Text style={[
+                    styles.modernContactButtonText, 
+                    { color: colors.textSecondary },
+                    formData.contactByPhone === 'yes' && { color: colors.headerText }
+                  ]}>{t('yes')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modernContactButton, 
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    formData.contactByPhone === 'no' && { backgroundColor: colors.primary, borderColor: colors.primary }
+                  ]}
+                  onPress={() => updateFormData('contactByPhone', 'no')}
+                >
+                  <Ionicons 
+                    name={formData.contactByPhone === 'no' ? 'checkmark-circle' : 'ellipse-outline'} 
+                    size={20} 
+                    color={formData.contactByPhone === 'no' ? colors.headerText : colors.textSecondary} 
+                  />
+                  <Text style={[
+                    styles.modernContactButtonText, 
+                    { color: colors.textSecondary },
+                    formData.contactByPhone === 'no' && { color: colors.headerText }
+                  ]}>{t('no')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Security Section */}
+          <View style={[styles.section, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('security')}</Text>
+            
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('password')}</Text>
+              <TextInput
+                style={[
+                  styles.modernInput, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.password && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
+                placeholder={t('password')}
+                placeholderTextColor={colors.placeholder}
+                value={formData.password}
+                onChangeText={(text) => {
+                  updateFormData('password', text);
+                  setFormErrors(prev => ({ ...prev, password: null }));
+                }}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+              {formErrors.password && (
+                <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.password}</Text>
+              )}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('confirmPassword')}</Text>
+              <TextInput
+                style={[
+                  styles.modernInput, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.confirmPassword && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
+                placeholder={t('confirmPasswordPlaceholder')}
+                placeholderTextColor={colors.placeholder}
+                value={formData.confirmPassword}
+                onChangeText={(text) => {
+                  updateFormData('confirmPassword', text);
+                  setFormErrors(prev => ({ ...prev, confirmPassword: null }));
+                }}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+              {formErrors.confirmPassword && (
+                <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.confirmPassword}</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Sign Up Button */}
+          <TouchableOpacity
+            style={[
+              styles.modernSignupButton, 
+              { backgroundColor: colors.primary, shadowColor: colors.shadow },
+              isSubmitting && { backgroundColor: colors.disabled }
+            ]}
+            onPress={handleSignUp}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <View style={styles.buttonContent}>
+                <ActivityIndicator size="small" color={colors.headerText} />
+                <Text style={[styles.modernSignupButtonText, { color: colors.headerText }]}>
+                  {t('creatingAccount')}
+                </Text>
+              </View>
             ) : (
-              <View style={styles.profilePhotoPlaceholder}>
-                <Ionicons name="camera" size={30} color="#888" />
-                <Text style={styles.profilePhotoText}>{t('uploadProfilePhoto')}</Text>
+              <View style={styles.buttonContent}>
+                <Ionicons name="person-add" size={20} color={colors.headerText} />
+                <Text style={[styles.modernSignupButtonText, { color: colors.headerText }]}>
+                  {t('signUp')}
+                </Text>
               </View>
             )}
           </TouchableOpacity>
 
-          <TextInput
-            style={[styles.input, formErrors.name && styles.inputError]}
-            placeholder={t('name')}
-            value={formData.name}
-            onChangeText={(text) => {
-              updateFormData('name', text);
-              setFormErrors(prev => ({ ...prev, name: null }));
-            }}
-          />
-          {formErrors.name && (
-            <Text style={styles.fieldError}>{formErrors.name}</Text>
-          )}
-
-          <TextInput
-            style={[styles.input, formErrors.username && styles.inputError]}
-            placeholder={t('username')}
-            value={formData.username}
-            onChangeText={(text) => {
-              updateFormData('username', text);
-              setFormErrors(prev => ({ ...prev, username: null }));
-            }}
-            autoCapitalize="none"
-          />
-          {formErrors.username && (
-            <Text style={styles.fieldError}>{formErrors.username}</Text>
-          )}
-
-          <TextInput
-            style={[styles.input, formErrors.email && styles.inputError]}
-            placeholder={t('email')}
-            value={formData.email}
-            onChangeText={(text) => {
-              updateFormData('email', text);
-              setFormErrors(prev => ({ ...prev, email: null }));
-            }}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-          {formErrors.email && (
-            <Text style={styles.fieldError}>{formErrors.email}</Text>
-          )}
-
-          <TextInput
-            style={[styles.inputPh, formErrors.phoneNumber && styles.inputError]}
-            placeholder={t('phoneNumber')}
-            value={formData.phoneNumber}
-            onChangeText={(text) => {
-              updateFormData('phoneNumber', text);
-              setFormErrors(prev => ({ ...prev, phoneNumber: null }));
-            }}
-            keyboardType="phone-pad"
-          />
-          {formErrors.phoneNumber && (
-            <Text style={styles.fieldError}>{formErrors.phoneNumber}</Text>
-          )}
-
-          {/* Contact Preference Section */}
-          <View style={styles.contactPreferenceContainer}>
-            <Text style={styles.contactPreferenceTitle}>
-              {t('allowCall')}
+          {/* Login Link */}
+          <View style={[styles.loginLinkContainer, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+            <Text style={[styles.loginLinkText, { color: colors.textSecondary }]}>
+              {t('alreadyHaveAccount')}
             </Text>
             <TouchableOpacity
-              style={[styles.contactButton, formData.contactByPhone === 'yes' && styles.selectedContactButton]}
-              onPress={() => updateFormData('contactByPhone', 'yes')}
+              onPress={() => navigation.goBack()}
+              disabled={isSubmitting}
             >
-              <Text style={styles.contactButtonText}>{t('yes')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.contactButton, formData.contactByPhone === 'no' && styles.selectedContactButton]}
-              onPress={() => updateFormData('contactByPhone', 'no')}
-            >
-              <Text style={styles.contactButtonText}>{t('no')}</Text>
+              <Text style={[styles.loginLinkButton, { color: colors.primary }]}>
+                {t('login')}
+              </Text>
             </TouchableOpacity>
           </View>
-
-          <TextInput
-            style={[styles.input, formErrors.dormNumber && styles.inputError]}
-            placeholder={t('dormNumber')}
-            value={formData.dormNumber}
-            onChangeText={(text) => {
-              updateFormData('dormNumber', text);
-              setFormErrors(prev => ({ ...prev, dormNumber: null }));
-            }}
-          />
-          {formErrors.dormNumber && (
-            <Text style={styles.fieldError}>{formErrors.dormNumber}</Text>
-          )}
-
-          <TextInput
-            style={[styles.input, formErrors.password && styles.inputError]}
-            placeholder={t('password')}
-            value={formData.password}
-            onChangeText={(text) => {
-              updateFormData('password', text);
-              setFormErrors(prev => ({ ...prev, password: null }));
-            }}
-            secureTextEntry
-            autoCapitalize="none"
-          />
-          {formErrors.password && (
-            <Text style={styles.fieldError}>{formErrors.password}</Text>
-          )}
-
-          <TextInput
-            style={[styles.input, formErrors.confirmPassword && styles.inputError]}
-            placeholder={t('confirmPassword')}
-            value={formData.confirmPassword}
-            onChangeText={(text) => {
-              updateFormData('confirmPassword', text);
-              setFormErrors(prev => ({ ...prev, confirmPassword: null }));
-            }}
-            secureTextEntry
-            autoCapitalize="none"
-          />
-          {formErrors.confirmPassword && (
-            <Text style={styles.fieldError}>{formErrors.confirmPassword}</Text>
-          )}
-
-          <TouchableOpacity
-            style={[styles.signupButton, isSubmitting && styles.disabledButton]}
-            onPress={handleSignUp}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.signupButtonText}>
-              {isSubmitting ? t('signingUp') : t('signUp')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.loginLink}
-            onPress={() => navigation.goBack()}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.loginLinkText}>
-              {t('alreadyHaveAccount')} {t('login')}
-            </Text>
-          </TouchableOpacity>
         </ScrollView>
         <LoadingOverlay
           isVisible={isSubmitting}
@@ -421,124 +563,212 @@ const SignUpScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    paddingTop: 40,
   },
   scrollContainer: {
     padding: 20,
-    paddingTop: 50,
-    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  
+  // Header Section
+  headerSection: {
+    padding: 25,
+    borderRadius: 20,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 30,
-    color: '#ff5722',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    opacity: 0.8,
+  },
+  
+  // Error Container
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  errorText: {
+    marginLeft: 10,
+    fontSize: 14,
+    flex: 1,
+  },
+  
+  // Profile Section
+  profileSection: {
+    padding: 25,
+    borderRadius: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
   },
   profilePhotoContainer: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: '#e1e1e1',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-    overflow: 'hidden',
+    borderWidth: 3,
+    borderStyle: 'dashed',
   },
   profilePhoto: {
     width: '100%',
     height: '100%',
+    borderRadius: 60,
   },
   profilePhotoPlaceholder: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  profilePhotoText: {
-    marginTop: 10,
-    color: '#888',
-  },
-  input: {
-    width: '100%',
-    backgroundColor: 'white',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  inputPh: {
-    width: '100%',
-    backgroundColor: 'white',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginBottom: 7,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  signupButton: {
-    width: '100%',
-    backgroundColor: '#ff5722',
-    padding: 15,
-    borderRadius: 10,
+  cameraIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+    marginBottom: 10,
   },
-  signupButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  loginLink: {
-    marginTop: 15,
-  },
-  loginLinkText: {
-    color: '#ff5722',
+  profilePhotoText: {
+    fontSize: 14,
     textAlign: 'center',
   },
+  
+  // Section Container
+  section: {
+    padding: 25,
+    borderRadius: 20,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  
+  // Input Groups
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  modernInput: {
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    borderRadius: 15,
+    borderWidth: 2,
+    fontSize: 16,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  
+  // Contact Preference
   contactPreferenceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 0,
-    marginBottom: 7,
+    marginTop: 10,
   },
   contactPreferenceTitle: {
-    fontSize: 17,
-    color:'lightslategray',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 15,
   },
-  contactButton: {
-    padding: 7,
-    borderWidth: 1,
-    borderColor: '#888',
-    borderRadius: 5,
-    marginHorizontal: 5,
-    backgroundColor: 'white',
+  contactButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modernContactButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 2,
+    flex: 0.48,
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  selectedContactButton: {
-    backgroundColor: '#ff5722', // Change to your desired color
-    borderColor: '#ff5722', // Change to your desired color
+  modernContactButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
-  contactButtonText: {
-    color: '#333',
+  
+  // Sign Up Button
+  modernSignupButton: {
+    paddingVertical: 18,
+    borderRadius: 20,
+    marginBottom: 20,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  disabledButton: {
-    backgroundColor: '#cccccc',
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  errorText: {
-    color: 'red',
-    marginBottom: 10,
-    textAlign: 'center',
+  modernSignupButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 10,
   },
-  inputError: {
-    borderColor: 'red',
+  
+  // Login Link
+  loginLinkContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    borderRadius: 15,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
+  loginLinkText: {
+    fontSize: 16,
+    marginRight: 5,
+  },
+  loginLinkButton: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
+  },
+  
+  // Error Styles
   fieldError: {
-    color: 'red',
-    marginBottom: 10,
-    textAlign: 'left',
-    width: '100%',
+    marginTop: 5,
+    fontSize: 14,
+    paddingLeft: 5,
   },
 });
 

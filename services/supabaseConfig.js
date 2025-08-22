@@ -11,7 +11,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false
+    detectSessionInUrl: false,
+    storage: AsyncStorage,  // Explicitly use AsyncStorage for better persistence
+    storageKey: 'supabase.auth.token'  // Consistent storage key
   },
   storage: {
     // Enable storage debugging

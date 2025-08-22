@@ -2056,6 +2056,30 @@ PODS:
     - VGSLUI (= 7.7.1)
   - VGSLUI (7.7.1):
     - VGSLFundamentals (= 7.7.1)
+  - yandex-mobile-ads (7.14.0):
+    - DoubleConversion
+    - glog
+    - RCT-Folly (= 2024.11.18.00)
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsc
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - YandexMobileAds (= 7.15.1)
+    - Yoga
   - YandexMobileAds (7.15.1):
     - AppMetricaAdSupport (< 6.0.0, >= 5.11.0)
     - AppMetricaCore (< 6.0.0, >= 5.11.0)
@@ -2164,7 +2188,7 @@ DEPENDENCIES:
   - "RNCPicker (from `../node_modules/@react-native-picker/picker`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - RNScreens (from `../node_modules/react-native-screens`)
-  - YandexMobileAds (= 7.15.1)
+  - yandex-mobile-ads (from `../node_modules/yandex-mobile-ads`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
 SPEC REPOS:
@@ -2403,6 +2427,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-gesture-handler"
   RNScreens:
     :path: "../node_modules/react-native-screens"
+  yandex-mobile-ads:
+    :path: "../node_modules/yandex-mobile-ads"
   Yoga:
     :path: "../node_modules/react-native/ReactCommon/yoga"
 
@@ -2541,9 +2567,10 @@ SPEC CHECKSUMS:
   VGSLFundamentals: 0dd050319bbdcaa3ee4152216b78aef9c0a5b36e
   VGSLNetworking: f5569e14a60390842d4aa69dfa0cfab20bb82710
   VGSLUI: ca0d7513c35e0c2db984e082930c783f31c84aef
+  yandex-mobile-ads: 36579a38eda276cabb6de28559521f27fd019729
   YandexMobileAds: 8dcb47fcef796dc566cf550d0dd7098520044c5d
   Yoga: c758bfb934100bb4bf9cbaccb52557cee35e8bdf
 
-PODFILE CHECKSUM: 694ec0a92884957611dbc16712bdfb4283f5e989
+PODFILE CHECKSUM: dffbfeb225ffd42f83c4fd26b1f461696ceb1ea0
 
 COCOAPODS: 1.16.2

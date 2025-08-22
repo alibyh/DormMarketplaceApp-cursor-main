@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../context/ThemeContext';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import supabase from '../../services/supabaseConfig'; // Add this import
 import { getImageUrl } from '../../utils/imageUtils';
@@ -55,12 +56,14 @@ const ImageWithFallback = ({ uri, style }) => {
 // Update the ProductCard component
 const ProductCard = ({ productName, price, dormNumber, productImage, type, isWantToBuy, createdAt }) => {
   const { t } = useTranslation();
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
   const [imageError, setImageError] = useState(false);
 
 
   return (
-    <View style={styles.card}>
-      <View style={styles.imageContainer}>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
+      <View style={[styles.imageContainer, { backgroundColor: colors.card }]}>
         <Image
           source={
             !imageError && productImage 
@@ -83,20 +86,20 @@ const ProductCard = ({ productName, price, dormNumber, productImage, type, isWan
       </View>
 
       {isWantToBuy && (
-        <View style={styles.wantToBuyBadge}>
+        <View style={[styles.wantToBuyBadge, { backgroundColor: colors.secondary, shadowColor: colors.shadow }]}>
           <Text style={styles.wantToBuyText}>{t('lookingFor')}</Text>
         </View>
       )}
 
-      <View style={styles.infoContainer}>
-        <Text style={styles.name} numberOfLines={2}>{productName}</Text>
-        {price && <Text style={styles.price}>{price}</Text>}
-        <View style={styles.bottomContainer}>
+      <View style={[styles.infoContainer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+        <Text style={[styles.name, { color: colors.text }]} numberOfLines={2}>{productName}</Text>
+        {price && <Text style={[styles.price, { color: colors.primary }]}>{price}</Text>}
+        <View style={[styles.bottomContainer, { borderTopColor: colors.border }]}>
           <View style={styles.locationContainer}>
-            <Ionicons name="location" size={16} color="#666" />
-            <Text style={styles.dorm}>{dormNumber}</Text>
+            <Ionicons name="location" size={16} color={colors.textSecondary} />
+            <Text style={[styles.dorm, { color: colors.textSecondary }]}>{dormNumber}</Text>
           </View>
-          <Text style={styles.timeText}>
+          <Text style={[styles.timeText, { color: colors.textSecondary }]}>
             {new Date(createdAt).toLocaleDateString()}
           </Text>
         </View>
@@ -108,13 +111,11 @@ const ProductCard = ({ productName, price, dormNumber, productImage, type, isWan
 // Add or update these styles
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'white',
     borderRadius: 12,
     marginHorizontal: 10,
     marginBottom: 15,
     padding: 5,
     // Enhanced shadows for iOS
-    shadowColor: '#000',
     shadowOffset: { 
       width: 0, 
       height: 4 
@@ -126,12 +127,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     // Add border for extra definition
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
   },
   imageContainer: {
     width: '100%',
     height: 200,
-    backgroundColor: 'white',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -154,20 +153,16 @@ const styles = StyleSheet.create({
   },
   infoContainer: {
     padding: 12,
-    backgroundColor: '#fff', // Ensure consistent background
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
   },
   name: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a', // Darker text for better contrast
     marginBottom: 8,
   },
   price: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#ff5722',
     marginBottom: 8,
     textShadowColor: 'rgba(0,0,0,0.1)',
     textShadowOffset: { width: 0, height: 1 },
@@ -180,7 +175,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.05)',
   },
   locationContainer: {
     flexDirection: 'row',
@@ -189,23 +183,19 @@ const styles = StyleSheet.create({
   dorm: {
     marginLeft: 4,
     fontSize: 14,
-    color: '#666',
   },
   timeText: {
     fontSize: 12,
-    color: '#666',
   },
   wantToBuyBadge: {
     position: 'absolute',
     top: 10,
     right: 10,
-    backgroundColor: '#104d59',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
     // Enhanced badge shadows
     elevation: 4,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,

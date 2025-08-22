@@ -16,6 +16,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import supabase from '../../services/supabaseConfig';
 import { handleProfileUpdateError, PROFILE_ERROR_CODES } from '../../utils/profileUpdateErrorHandler';
@@ -26,6 +27,8 @@ import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWr
 
 const UpdateProfileScreen = ({ navigation }) => {
   const { t } = useTranslation();
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
 
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -52,6 +55,22 @@ const [isSubmitting, setIsSubmitting] = useState(false);
   }, []);
 
   useEffect(() => {
+    // Load any existing temporary photo on mount
+    const loadTempPhoto = async () => {
+      try {
+        const tempPhotoUri = await AsyncStorage.getItem('temp_profile_photo');
+        if (tempPhotoUri) {
+          console.log("Loading existing temp photo:", tempPhotoUri);
+          setProfilePhotoPreview(tempPhotoUri);
+          setProfilePhotoChanged(true);
+        }
+      } catch (error) {
+        console.error('Error loading temp photo:', error);
+      }
+    };
+    
+    loadTempPhoto();
+    
     return () => {
       // Cleanup temporary photo on unmount
       AsyncStorage.removeItem('temp_profile_photo')
@@ -97,15 +116,20 @@ const [isSubmitting, setIsSubmitting] = useState(false);
             
             // Load avatar from metadata if available
             if (user.user_metadata.avatar_url) {
-              const avatarFileName = user.user_metadata.avatar_url;
+              const avatarUrl = user.user_metadata.avatar_url;
               
-              // Get full URL from Supabase
-              const { data: urlData } = supabase.storage
-                .from('avatars')
-                .getPublicUrl(avatarFileName);
-                
-              if (urlData && urlData.publicUrl) {
-                setProfilePhotoPreview(urlData.publicUrl);
+              // Check if it's already a complete URL
+              if (avatarUrl.startsWith('http')) {
+                setProfilePhotoPreview(avatarUrl);
+              } else {
+                // Get full URL from Supabase
+                const { data: urlData } = supabase.storage
+                  .from('avatars')
+                  .getPublicUrl(avatarUrl);
+                  
+                if (urlData && urlData.publicUrl) {
+                  setProfilePhotoPreview(urlData.publicUrl);
+                }
               }
             }
           }
@@ -126,15 +150,18 @@ const [isSubmitting, setIsSubmitting] = useState(false);
           
           // Load profile photo if available
           if (profileData.avatar_url) {
-            
-            // Get the public URL for the avatar
-            const { data: urlData } = supabase.storage
-              .from('avatars')
-              .getPublicUrl(profileData.avatar_url);
-              
-            if (urlData && urlData.publicUrl) {
-              setProfilePhotoPreview(urlData.publicUrl);
+            // Check if it's already a complete URL
+            if (profileData.avatar_url.startsWith('http')) {
+              setProfilePhotoPreview(profileData.avatar_url);
             } else {
+              // Get the public URL for the avatar
+              const { data: urlData } = supabase.storage
+                .from('avatars')
+                .getPublicUrl(profileData.avatar_url);
+                
+              if (urlData && urlData.publicUrl) {
+                setProfilePhotoPreview(urlData.publicUrl);
+              }
             }
           }
         }
@@ -174,16 +201,19 @@ const [isSubmitting, setIsSubmitting] = useState(false);
         return;
       }
       
-      // Set the preview and mark that the photo was changed
-      setProfilePhotoPreview(result.assets[0].uri);
+      const selectedImageUri = result.assets[0].uri;
+      console.log("Selected image URI:", selectedImageUri);
+      
+      // Set the preview immediately
+      setProfilePhotoPreview(selectedImageUri);
       setProfilePhotoChanged(true);
       
       // Store the selected image temporarily
-      await AsyncStorage.setItem('temp_profile_photo', result.assets[0].uri);
+      await AsyncStorage.setItem('temp_profile_photo', selectedImageUri);
       console.log("Stored temporary profile photo URI");
     } catch (error) {
       console.error('Image picker error:', error);
-      Alert.alert(t('Error'), t('Failed to select image'));
+      Alert.alert(t('error'), t('failedToSelectImage'));
     }
   };
 
@@ -192,13 +222,22 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       const tempPhotoUri = await AsyncStorage.getItem('temp_profile_photo');
       if (!tempPhotoUri) return null;
   
-      const response = await fetch(tempPhotoUri);
-      const blob = await response.blob();
+      // Convert the image to binary data using the same method as SignUpScreen
+      const fetchResponse = await fetch(tempPhotoUri);
+      if (!fetchResponse.ok) {
+        throw new Error('Failed to fetch image');
+      }
+      
+      const arrayBuffer = await fetchResponse.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
   
       const fileName = `${userId}_${Date.now()}.jpg`;
-      const { error: uploadError, data } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(fileName, blob);
+        .upload(fileName, uint8Array, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
   
       if (uploadError) throw uploadError;
   
@@ -277,7 +316,19 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       if (profilePhotoChanged) {
         try {
           avatarUrl = await handleProfilePhotoUpload();
+          if (avatarUrl) {
+            // Get the public URL for the uploaded avatar
+            const { data: urlData } = supabase.storage
+              .from('avatars')
+              .getPublicUrl(avatarUrl);
+            
+            if (urlData && urlData.publicUrl) {
+              // Update the preview with the new URL
+              setProfilePhotoPreview(urlData.publicUrl);
+            }
+          }
         } catch (photoError) {
+          console.error('Photo upload error:', photoError);
           throw { type: PROFILE_ERROR_CODES.IMAGE_UPLOAD, error: photoError };
         }
       }
@@ -297,6 +348,12 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       }
 
       // Success handling
+      // Clean up temporary photo
+      if (profilePhotoChanged) {
+        await AsyncStorage.removeItem('temp_profile_photo');
+        setProfilePhotoChanged(false);
+      }
+      
       Alert.alert(
         t('Success!'),
         t('Your profile has been updated successfully.'),
@@ -325,44 +382,58 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       loadingMessage={t('updatingProfile')}
       errorMessage={error}
     >
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
         <KeyboardAvoidingView
-          style={styles.container}
+          style={[styles.container, { backgroundColor: colors.background }]}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <ScrollView
             contentContainerStyle={styles.scrollContainer}
             showsVerticalScrollIndicator={false}
           >
-            <Text style={styles.title}>{t('Update Profile')}</Text>
+            <Text style={[styles.title, { color: colors.primary }]}>{t('Update Profile')}</Text>
 
             {/* Profile Photo */}
             <TouchableOpacity
-              style={styles.profilePhotoContainer}
+              style={[styles.profilePhotoContainer, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
               onPress={pickImage}
             >
               {profilePhotoPreview ? (
                 <Image
                   source={{ uri: profilePhotoPreview }}
                   style={styles.profilePhoto}
+                  onError={(e) => {
+                    console.error('Profile photo load error:', e.nativeEvent.error);
+                    console.error('Failed URL:', profilePhotoPreview);
+                    // Fall back to default avatar on error
+                    setProfilePhotoPreview(null);
+                  }}
+                  onLoad={() => {
+                    console.log('Profile photo loaded successfully:', profilePhotoPreview);
+                  }}
                 />
               ) : (
                 <View style={styles.defaultAvatarContainer}>
-                  <Ionicons name="person-circle" size={100} color="#888" />
-                  <Text style={styles.uploadText}>{t('Upload Photo')}</Text>
+                  <Ionicons name="person-circle" size={100} color={colors.textSecondary} />
+                  <Text style={[styles.uploadText, { color: colors.textSecondary }]}>{t('Upload Photo')}</Text>
                 </View>
               )}
-              <View style={styles.editIconContainer}>
-                <Ionicons name="camera" size={24} color="#fff" />
+              <View style={[styles.editIconContainer, { backgroundColor: colors.primary }]}>
+                <Ionicons name="camera" size={24} color={colors.headerText} />
               </View>
             </TouchableOpacity>
 
             {/* Form Fields */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>{t('Name')}</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('Name')}</Text>
               <TextInput
-                style={[styles.input, formErrors.name && styles.inputError]}
+                style={[
+                  styles.input, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.name && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
                 placeholder={t('Enter your name')}
+                placeholderTextColor={colors.placeholder}
                 value={formData.name}
                 onChangeText={(text) => {
                   updateFormData('name', text);
@@ -370,15 +441,20 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 }}
               />
               {formErrors.name && (
-                <Text style={styles.errorText}>{formErrors.name}</Text>
+                <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.name}</Text>
               )}
             </View>
             
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>{t('Username')}</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('Username')}</Text>
               <TextInput
-                style={[styles.input, formErrors.username && styles.inputError]}
+                style={[
+                  styles.input, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.username && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
                 placeholder={t('Enter a username')}
+                placeholderTextColor={colors.placeholder}
                 value={formData.username}
                 onChangeText={(text) => {
                   updateFormData('username', text);
@@ -386,15 +462,20 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 }}
               />
               {formErrors.username && (
-                <Text style={styles.errorText}>{formErrors.username}</Text>
+                <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.username}</Text>
               )}
             </View>
             
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>{t('Dorm')}</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('Dorm')}</Text>
               <TextInput
-                style={[styles.input, formErrors.dormNumber && styles.inputError]}
+                style={[
+                  styles.input, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.dormNumber && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
                 placeholder={t('Enter your dorm')}
+                placeholderTextColor={colors.placeholder}
                 value={formData.dormNumber}
                 onChangeText={(text) => {
                   updateFormData('dormNumber', text);
@@ -402,15 +483,20 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 }}
               />
               {formErrors.dormNumber && (
-                <Text style={styles.errorText}>{formErrors.dormNumber}</Text>
+                <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.dormNumber}</Text>
               )}
             </View>
             
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>{t('Phone Number')}</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('Phone Number')}</Text>
               <TextInput
-                style={[styles.input, formErrors.phoneNumber && styles.inputError]}
+                style={[
+                  styles.input, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.phoneNumber && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
                 placeholder={t('Enter your phone number')}
+                placeholderTextColor={colors.placeholder}
                 value={formData.phoneNumber}
                 onChangeText={(text) => {
                   updateFormData('phoneNumber', text);
@@ -419,15 +505,20 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 keyboardType="phone-pad"
               />
               {formErrors.phoneNumber && (
-                <Text style={styles.errorText}>{formErrors.phoneNumber}</Text>
+                <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.phoneNumber}</Text>
               )}
             </View>
             
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>{t('New Password')} {t('(optional)')}</Text>
+              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('New Password')} {t('(optional)')}</Text>
               <TextInput
-                style={[styles.input, formErrors.password && styles.inputError]}
+                style={[
+                  styles.input, 
+                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                  formErrors.password && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                ]}
                 placeholder={t('Enter new password')}
+                placeholderTextColor={colors.placeholder}
                 value={formData.password}
                 onChangeText={(text) => {
                   updateFormData('password', text);
@@ -436,27 +527,29 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 secureTextEntry={true}
               />
               {formErrors.password && (
-                <Text style={styles.errorText}>{formErrors.password}</Text>
+                <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.password}</Text>
               )}
-              <Text style={styles.passwordHint}>
+              <Text style={[styles.passwordHint, { color: colors.textSecondary }]}>
                 {t('Leave empty to keep current password')}
               </Text>
             </View>
 
             {/* Allow Phone Contact */}
             <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>{t('Allow Phone Contact')}</Text>
+              <Text style={[styles.toggleLabel, { color: colors.text }]}>{t('Allow Phone Contact')}</Text>
               <View style={styles.toggleButtons}>
                 <TouchableOpacity
                   style={[
                     styles.toggleOption,
-                    formData.allowPhoneContact && styles.toggleOptionSelected
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    formData.allowPhoneContact && { backgroundColor: colors.primary, borderColor: colors.primary }
                   ]}
                   onPress={() => updateFormData('allowPhoneContact', true)}
                 >
                   <Text style={[
                     styles.toggleText,
-                    formData.allowPhoneContact && styles.toggleTextSelected
+                    { color: colors.textSecondary },
+                    formData.allowPhoneContact && { color: colors.headerText }
                   ]}>
                     {t('Yes')}
                   </Text>
@@ -465,13 +558,15 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 <TouchableOpacity
                   style={[
                     styles.toggleOption,
-                    !formData.allowPhoneContact && styles.toggleOptionSelected
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                    !formData.allowPhoneContact && { backgroundColor: colors.primary, borderColor: colors.primary }
                   ]}
                   onPress={() => updateFormData('allowPhoneContact', false)}
                 >
                   <Text style={[
                     styles.toggleText,
-                    !formData.allowPhoneContact && styles.toggleTextSelected
+                    { color: colors.textSecondary },
+                    !formData.allowPhoneContact && { color: colors.headerText }
                   ]}>
                     {t('No')}
                   </Text>
@@ -484,27 +579,28 @@ const [isSubmitting, setIsSubmitting] = useState(false);
               <TouchableOpacity
                 style={[
                   styles.updateButton,
-                  isSubmitting && styles.buttonDisabled
+                  { backgroundColor: colors.primary, shadowColor: colors.shadow },
+                  isSubmitting && { backgroundColor: colors.disabled }
                 ]}
                 onPress={handleUpdateProfile}
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (
                   <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color="#ffffff" />
-                    <Text style={styles.buttonText}> {t('Updating')}...</Text>
+                    <ActivityIndicator size="small" color={colors.headerText} />
+                    <Text style={[styles.buttonText, { color: colors.headerText }]}> {t('Updating')}...</Text>
                   </View>
                 ) : (
-                  <Text style={styles.buttonText}>{t('Update Profile')}</Text>
+                  <Text style={[styles.buttonText, { color: colors.headerText }]}>{t('Update Profile')}</Text>
                 )}
               </TouchableOpacity>
               
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={[styles.cancelButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 onPress={() => navigation.goBack()}
                 disabled={isLoading}
               >
-                <Text style={styles.cancelButtonText}>{t('Cancel')}</Text>
+                <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>{t('Cancel')}</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -527,44 +623,40 @@ const [isSubmitting, setIsSubmitting] = useState(false);
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: 'white',
   },
   scrollContainer: {
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'android' ? 20 : 10,
-    paddingBottom: 30,
+    paddingTop: 0,
+    paddingBottom: 0,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 30,
-    color: '#ff5722',
+    marginBottom: 15,
   },
   profilePhotoContainer: {
-    width: 150,
-    height: 150,
+    width: 120,
+    height: 120,
     borderRadius: 75,
-    backgroundColor: '#f5f5f5',
     alignSelf: 'center',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 25,
     position: 'relative',
     overflow: 'visible',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
   profilePhoto: {
-    width: 150,
-    height: 150,
+    width: 120,
+    height: 120,
     borderRadius: 75,
   },
   defaultAvatarContainer: {
@@ -572,7 +664,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   uploadText: {
-    color: '#888',
     fontSize: 14,
     marginTop: 8,
     textAlign: 'center',
@@ -581,7 +672,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: '#ff5722',
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -589,43 +679,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#fff',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
   },
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   inputLabel: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 8,
-    color: '#333',
   },
   input: {
     height: 48,
-    borderColor: '#ddd',
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 15,
     fontSize: 16,
-    backgroundColor: '#fcfcfc',
-  },
-  inputError: {
-    borderColor: '#ff3b30',
-    backgroundColor: '#fff0f0',
   },
   errorText: {
-    color: '#ff3b30',
     fontSize: 12,
     marginTop: 4,
     marginLeft: 4,
   },
   passwordHint: {
     fontSize: 12,
-    color: '#888',
     marginTop: 6,
     fontStyle: 'italic',
   },
@@ -636,7 +716,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 10,
-    color: '#333',
   },
   toggleButtons: {
     flexDirection: 'row',
@@ -647,47 +726,31 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderWidth: 1,
-    borderColor: '#ddd',
     alignItems: 'center',
     marginHorizontal: 4,
     borderRadius: 8,
-    backgroundColor: '#f8f8f8',
-  },
-  toggleOptionSelected: {
-    backgroundColor: '#ff5722',
-    borderColor: '#ff5722',
   },
   toggleText: {
     fontSize: 16,
-    color: '#555',
     fontWeight: '500',
-  },
-  toggleTextSelected: {
-    color: 'white',
   },
   buttonContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 30,
+    marginTop: 5,
   },
   updateButton: {
-    backgroundColor: '#ff5722',
     padding: 14,
     borderRadius: 8,
     flex: 1,
     alignItems: 'center',
     marginRight: 10,
-    shadowColor: '#ff7a50',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
   },
-  buttonDisabled: {
-    backgroundColor: '#ffb199',
-  },
   buttonText: {
-    color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
   },
@@ -696,12 +759,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     flex: 1,
     alignItems: 'center',
-    backgroundColor: '#f0f0f0',
     borderWidth: 1,
-    borderColor: '#ddd',
   },
   cancelButtonText: {
-    color: '#555',
     fontWeight: 'bold',
     fontSize: 16,
   },

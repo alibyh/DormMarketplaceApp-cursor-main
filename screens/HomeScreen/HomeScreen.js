@@ -16,6 +16,7 @@ import {
   Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SvgXml } from 'react-native-svg';
 import supabase from '../../services/supabaseConfig';
 import ProductCard from '../../components/ProductCard/ProductCard';
 import { useTranslation } from 'react-i18next';
@@ -23,18 +24,29 @@ import { checkNetworkConnection } from '../../utils/networkUtils'; // Add this i
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import LoadingState from '../../components/LoadingState/LoadingState';
 import RetryView from '../../components/RetryView/RetryView';
+import { useTheme } from '../../context/ThemeContext';
 
 // Add these imports at the top
 import { Alert } from 'react-native';
-import YandexBanner from '../../components/YandexBanner/YandexBanner';
+// import YandexBanner from '../../components/YandexBanner/YandexBanner';
+
+// Telegram SVG icon content
+const telegramSvg = `<svg width="18" height="18" viewBox="0 0 256 256" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid">
+		<g>
+				<path d="M128,0 C57.307,0 0,57.307 0,128 L0,128 C0,198.693 57.307,256 128,256 L128,256 C198.693,256 256,198.693 256,128 L256,128 C256,57.307 198.693,0 128,0 L128,0 Z" fill="#40B3E0"></path>
+				<path d="M190.2826,73.6308 L167.4206,188.8978 C167.4206,188.8978 164.2236,196.8918 155.4306,193.0548 L102.6726,152.6068 L83.4886,143.3348 L51.1946,132.4628 C51.1946,132.4628 46.2386,130.7048 45.7586,126.8678 C45.2796,123.0308 51.3546,120.9528 51.3546,120.9528 L179.7306,70.5928 C179.7306,70.5928 190.2826,65.9568 190.2826,73.6308" fill="#FFFFFF"></path>
+				<path d="M98.6178,187.6035 C98.6178,187.6035 97.0778,187.4595 95.1588,181.3835 C93.2408,175.3085 83.4888,143.3345 83.4888,143.3345 L161.0258,94.0945 C161.0258,94.0945 165.5028,91.3765 165.3428,94.0945 C165.3428,94.0945 166.1418,94.5735 163.7438,96.8115 C161.3458,99.0505 102.8328,151.6475 102.8328,151.6475" fill="#D2E5F1"></path>
+				<path d="M122.9015,168.1154 L102.0335,187.1414 C102.0335,187.1414 100.4025,188.3794 98.6175,187.6034 L102.6135,152.2624" fill="#B5CFE4"></path>
+		</g>
+</svg>`;
 
 // Add this before the HomeScreen component
 const handleError = (error, context) => {
   console.error(`Error in ${context}:`, error);
   Alert.alert(
-    'Error',
-    error?.message || `An error occurred in ${context}`,
-    [{ text: 'OK' }]
+    t('error'),
+    error?.message || t('errorTryAgain'),
+    [{ text: t('ok') }]
   );
 };
 
@@ -96,6 +108,8 @@ const getImageUrl = (path, bucket) => {
 
 const HomeScreen = ({ navigation, route }) => {
   const { t } = useTranslation();
+  const { currentTheme, changeTheme, getThemeColors } = useTheme();
+  const colors = getThemeColors();
   const [listings, setListings] = useState([]); // Keep this as main data source
   const [filteredListings, setFilteredListings] = useState([]); // Rename for clarity
   const [banners, setBanners] = useState([]);
@@ -126,7 +140,6 @@ const HomeScreen = ({ navigation, route }) => {
   const bannerFlatListRef = useRef(null);
   const [isSortModalVisible, setIsSortModalVisible] = useState(false);
   const handleAboutUsClick = () => {
-    console.log('about  us');
     Alert.alert(
       t('aboutUs'), // Assuming `t` is for translation
       t('aboutContent'),
@@ -203,7 +216,6 @@ const HomeScreen = ({ navigation, route }) => {
   const fetchListings = async () => {
     try {
       const isConnected = await checkNetworkConnection();
-      console.log('Network check:', { isConnected });
 
       if (!isConnected) {
         throw { type: ERROR_TYPES.NETWORK };
@@ -325,7 +337,6 @@ const HomeScreen = ({ navigation, route }) => {
 
   const Footer = () => {
     const openVK = async () => {
-      console.log('vvk');
       const vkDeepLink = 'vk://id821551765'; // Deep link for VK
       const webURL = 'https://vk.com/id821551765'; // Fallback web URL
 
@@ -334,59 +345,66 @@ const HomeScreen = ({ navigation, route }) => {
 
       // Open the VK app if installed, otherwise fall back to the web URL
       if (isVKAppInstalled) {
-        console.log('in');
         Linking.openURL(vkDeepLink).catch(err => console.error('Error opening VK app:', err));
       } else {
-        console.log('not in');
         Linking.openURL(webURL).catch(err => console.error('Error opening VK web page:', err));
       }
     };
+
+    const openTelegramBot = () => {
+      const telegramBotURL = 'https://t.me/ushopsfubot';
+      Linking.openURL(telegramBotURL).catch(err => console.error('Error opening Telegram bot:', err));
+    };
+
     const { t } = useTranslation();
 
     return (
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
         <View style={styles.footerContent}>
           <View style={styles.footerColumn}>
-            <Text style={styles.footerTitle}>{t('quickLinks')}</Text>
+            <Text style={[styles.footerTitle, { color: colors.primary }]}>{t('quickLinks')}</Text>
             <TouchableOpacity onPress={handleAboutUsClick}>
-              <Text style={[styles.footerLink, { textDecorationLine: 'underline' }]}>
+              <Text style={[styles.footerLink, { color: colors.textSecondary, textDecorationLine: 'underline' }]}>
                 {t('aboutUs')}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => Linking.openURL('mailto:dmp@mail.ru')}>
-              <Text style={styles.footerLink}>{t('contactUs')}</Text>
+              <Text style={[styles.footerLink, { color: colors.textSecondary }]}>{t('contactUs')}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.footerColumn}>
-            <Text style={styles.footerTitle}>{t('support')}</Text>
+            <Text style={[styles.footerTitle, { color: colors.primary }]}>{t('support')}</Text>
             <View style={styles.supportInfo}>
-              <Ionicons name="mail-outline" size={18} color="#666" style={styles.supportIcon} />
-              <Text style={styles.footerText}>{t('supportEmail')}</Text>
+              <Ionicons name="call-outline" size={18} color={colors.textSecondary} style={styles.supportIcon} />
+              <Text style={[styles.footerText, { color: colors.textSecondary }]}>{t('supportPhone')}</Text>
             </View>
             <View style={styles.supportInfo}>
-              <Ionicons name="call-outline" size={18} color="#666" style={styles.supportIcon} />
-              <Text style={styles.footerText}>{t('supportPhone')}</Text>
+              <SvgXml xml={telegramSvg} width={18} height={18} style={styles.supportIcon} />
+              <TouchableOpacity onPress={openTelegramBot}>
+                <Text style={[styles.footerText, { color: colors.textSecondary }]}>{t('telegramBot')}</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
 
         <View style={styles.footerSocialContainer}>
+          <Text style={[styles.followDeveloperTitle, { color: colors.primary }]}>{t('followDeveloper')}</Text>
           <View style={styles.footerSocialIcons}>
             <TouchableOpacity style={styles.socialIcon} onPress={() => handleSocialMediaClick('https://www.instagram.com/ali__byh/profilecard/?igsh=Mnl3cmRheGNyaGNp')}>
-              <Ionicons name="logo-instagram" size={24} color="#333" />
+              <Ionicons name="logo-instagram" size={24} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIcon} onPress={() => handleSocialMediaClick('https://www.facebook.com/share/15vtL6xpic/?mibextid=wwXIfr')}>
-              <Ionicons name="logo-facebook" size={24} color="#333" />
+              <Ionicons name="logo-facebook" size={24} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialIcon} onPress={openVK}>
-              <Ionicons name="logo-vk" size={24} color="#333" />
+              <Ionicons name="logo-vk" size={24} color={colors.text} />
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.copyrightText}>
-            © {new Date().getFullYear()} {t('appName')}. {t('allRightsReserved')}
+          <Text style={[styles.copyrightText, { color: colors.textSecondary }]}>
+            © {new Date().getFullYear()} {t('appTitle')}. {t('allRightsReserved')}
           </Text>
         </View>
       </View>
@@ -441,7 +459,7 @@ const HomeScreen = ({ navigation, route }) => {
       />
       {item.isAd && (
         <View style={styles.adIndicator}>
-          <Text style={styles.adIndicatorText}>Ad</Text>
+          <Text style={styles.adIndicatorText}>{t('adLabel')}</Text>
         </View>
       )}
     </TouchableOpacity>
@@ -514,11 +532,6 @@ const HomeScreen = ({ navigation, route }) => {
     let intervalId;
 
     const startAutoSlide = () => {
-      console.log('[HomeScreen] Starting auto-slide with:', {
-        bannersLength: banners.length,
-        adLoaded,
-        hasFlatListRef: !!bannerFlatListRef.current
-      });
       
       intervalId = setInterval(() => {
         if ((banners.length > 0 || adLoaded) && bannerFlatListRef.current) {
@@ -535,31 +548,20 @@ const HomeScreen = ({ navigation, route }) => {
             console.error('[HomeScreen] Error during auto-slide:', error);
           }
         } else {
-          console.log('[HomeScreen] Skipping auto-slide:', {
-            bannersLength: banners.length,
-            adLoaded,
-            hasFlatListRef: !!bannerFlatListRef.current
-          });
         }
-      }, 300000);
+      }, 3000);
 
       return intervalId;
     };
 
     if (banners.length > 0 || adLoaded) {
-      console.log('[HomeScreen] Auto-slide conditions met, setting up timer');
       const intervalId = startAutoSlide();
       return () => {
-        console.log('[HomeScreen] Cleaning up auto-slide timer');
         if (intervalId) {
           clearInterval(intervalId);
         }
       };
     } else {
-      console.log('[HomeScreen] Auto-slide conditions not met:', {
-        bannersLength: banners.length,
-        adLoaded
-      });
     }
   }, [banners.length, screenWidth, adLoaded]);
 
@@ -588,13 +590,22 @@ const HomeScreen = ({ navigation, route }) => {
           key={i}
           style={[
             styles.paginationButton,
-            currentPage === i && styles.activePaginationButton
+            { 
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              color: colors.text 
+            },
+            currentPage === i && { 
+              backgroundColor: colors.primary,
+              borderColor: colors.primary
+            }
           ]}
           onPress={() => setCurrentPage(i)}
         >
           <Text style={[
             styles.paginationButtonText,
-            currentPage === i && styles.activePaginationButtonText
+            { color: colors.text },
+            currentPage === i && { color: colors.headerText }
           ]}>
             {i}
           </Text>
@@ -605,10 +616,17 @@ const HomeScreen = ({ navigation, route }) => {
       <View style={styles.paginationContainer}>
         {currentPage > 1 && (
           <TouchableOpacity
-            style={styles.paginationButton}
+            style={[
+              styles.paginationButton, 
+              { 
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                color: colors.text 
+              }
+            ]}
             onPress={() => setCurrentPage(currentPage - 1)}
           >
-            <Text style={styles.paginationButtonText}>{'<'}</Text>
+            <Text style={[styles.paginationButtonText, { color: colors.text }]}>{t('previous')}</Text>
           </TouchableOpacity>
         )}
 
@@ -616,15 +634,22 @@ const HomeScreen = ({ navigation, route }) => {
 
         {currentPage < totalPages && (
           <TouchableOpacity
-            style={styles.paginationButton}
+            style={[
+              styles.paginationButton, 
+              { 
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                color: colors.text 
+              }
+            ]}
             onPress={() => setCurrentPage(currentPage + 1)}
           >
-            <Text style={styles.paginationButtonText}>{'>'}</Text>
+            <Text style={[styles.paginationButtonText, { color: colors.text }]}>{t('next')}</Text>
           </TouchableOpacity>
         )}
       </View>
     );
-  }, [currentPage, totalPages]);
+  }, [currentPage, totalPages, colors]);
 
   // Sort Modal Component
   const SortModal = useCallback(() => {
@@ -643,22 +668,23 @@ const HomeScreen = ({ navigation, route }) => {
         onRequestClose={() => setIsSortModalVisible(false)}
       >
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={[styles.modalOverlay, { backgroundColor: colors.modalOverlay }]}
           activeOpacity={1}
           onPress={() => setIsSortModalVisible(false)}
         >
           <TouchableOpacity
-            style={styles.modalContainer}
+            style={[styles.modalContainer, { backgroundColor: colors.modalBackground, shadowColor: colors.shadow }]}
             activeOpacity={1}
             onPress={(e) => e.stopPropagation()}
           >
-            <Text style={styles.modalTitle}>{t('sortProducts')}</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{t('sortProducts')}</Text>
             {sortOptions.map((option) => (
               <TouchableOpacity
                 key={option.value}
                 style={[
                   styles.sortOptionButton,
-                  sortType === option.value && styles.selectedSortOption
+                  { borderBottomColor: colors.border },
+                  sortType === option.value && { backgroundColor: colors.surface }
                 ]}
                 onPress={() => {
                   setSortType(option.value);
@@ -668,7 +694,8 @@ const HomeScreen = ({ navigation, route }) => {
                 <Text
                   style={[
                     styles.sortOptionText,
-                    sortType === option.value && styles.selectedSortOptionText
+                    { color: colors.text },
+                    sortType === option.value && { color: colors.primary }
                   ]}
                 >
                   {option.label}
@@ -676,10 +703,10 @@ const HomeScreen = ({ navigation, route }) => {
               </TouchableOpacity>
             ))}
             <TouchableOpacity
-              style={styles.cancelButton}
+              style={[styles.cancelButton, { backgroundColor: colors.surface }]}
               onPress={() => setIsSortModalVisible(false)}
             >
-              <Text style={styles.cancelButtonText}>{t('CancelSort')}</Text>
+              <Text style={[styles.cancelButtonText, { color: colors.text }]}>{t('CancelSort')}</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -702,7 +729,7 @@ const HomeScreen = ({ navigation, route }) => {
       errorMessage={error?.message || t('errorLoadingProducts')}
     >
       <ScrollView
-        style={styles.container}
+        style={[styles.container, { backgroundColor: colors.background }]}
         contentContainerStyle={[styles.contentContainer]}
         refreshControl={
           <RefreshControl
@@ -723,11 +750,27 @@ const HomeScreen = ({ navigation, route }) => {
         ) : (
           <>
             {/* Existing content */}
-            <View style={styles.header}>
+            <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
               <View style={styles.headerContent}>
-              <Text style={styles.headerTitle}>{t('appTitle')}</Text>
-                <View style={styles.logoContainer}>
-                {!isAuthenticated && (
+                {/* Left side - Theme button and Sign In button */}
+                <View style={styles.headerLeft}>
+                  {/* Theme Toggle Button */}
+                  <TouchableOpacity
+                    style={[styles.themeButton, { backgroundColor: colors.buttonSecondary }]}
+                    onPress={() => {
+                      const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+                      changeTheme(nextTheme);
+                    }}
+                  >
+                    <Ionicons 
+                      name={currentTheme === 'light' ? 'moon' : 'sunny'} 
+                      size={20} 
+                      color="#FFFFFF" 
+                    />
+                  </TouchableOpacity>
+                  
+                  {/* Sign In Button - only show when not authenticated */}
+                  {!isAuthenticated && (
                     <TouchableOpacity
                       style={styles.signInButton}
                       onPress={() => navigation.navigate('Login')}
@@ -736,23 +779,29 @@ const HomeScreen = ({ navigation, route }) => {
                       <Text style={styles.signInButtonText}>{t('signIn')}</Text>
                     </TouchableOpacity>
                   )}
+                </View>
+
+                {/* Center - App Title */}
+                <Text style={[styles.headerTitle, { color: colors.primary }]}>{t('appTitle')}</Text>
+
+                {/* Right side - Logo */}
+                <View style={styles.headerRight}>
                   <Image
                     source={require('../../assets/S.F.U2.png')}
                     style={styles.headerLogo}
                     resizeMode="contain"
                   />
-                  
                 </View>
-                
               </View>
             </View>
 
             {/* Search Bar */}
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
+            <View style={[styles.searchContainer, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+              <Ionicons name="search" size={20} color={colors.textSecondary} style={styles.searchIcon} />
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, { color: colors.text }]}
                 placeholder={t('searchPlaceholder')}
+                placeholderTextColor={colors.placeholder}
                 value={searchQuery}
                 onChangeText={handleSearch}
                 clearButtonMode="while-editing"
@@ -762,14 +811,15 @@ const HomeScreen = ({ navigation, route }) => {
             {(banners.length > 0 || true) && (
               <FlatList
                 ref={bannerFlatListRef}
-                data={[{ id: 'yandex-banner' }, ...banners]}
+                data={[...banners]} // Temporarily removed yandex-banner
                 keyExtractor={(item) => item.id.toString()}
                 renderItem={({ item }) =>
                   item.id === 'yandex-banner' ? (
-                    <YandexBanner onAdLoaded={() => {
-                      console.log('[HomeScreen] Yandex banner loaded, setting adLoaded to true');
-                      setAdLoaded(true);
-                    }} />
+                    // <YandexBanner onAdLoaded={() => {
+                    //   console.log('[HomeScreen] Yandex banner loaded, setting adLoaded to true');
+                    //   setAdLoaded(true);
+                    // }} />
+                    null // Temporarily commenting out YandexBanner
                   ) : (
                     renderBannerItem({ item })
                   )
@@ -798,15 +848,15 @@ const HomeScreen = ({ navigation, route }) => {
 
             {/* Products Section */}
             <View style={styles.productHeaderContainer}>
-              <Text style={styles.title}>{t('availableProducts')}</Text>
+              <Text style={[styles.title, { color: colors.primary }]}>{t('availableProducts')}</Text>
 
               {/* Sort Button */}
               <TouchableOpacity
-                style={styles.sortButton}
+                style={[styles.sortButton, { backgroundColor: colors.card, borderColor: colors.border }]}
                 onPress={() => setIsSortModalVisible(true)}
               >
-                <Ionicons name="filter" size={24} color="#333" />
-                <Text style={styles.sortButtonText}>{t('sort1')}</Text>
+                <Ionicons name="filter" size={24} color={colors.text} />
+                <Text style={[styles.sortButtonText, { color: colors.text }]}>{t('sort1')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -816,7 +866,7 @@ const HomeScreen = ({ navigation, route }) => {
             {/* Products Rendering */}
             {displayedListings.length === 0 ? (
               <View style={styles.noProductsContainer}>
-                <Text style={styles.noProductsText}>
+                <Text style={[styles.noProductsText, { color: colors.textSecondary }]}>
                   {searchQuery ? t('noProductsMatchSearch') : t('noProductsAvailable')}
                 </Text>
               </View>
@@ -826,7 +876,6 @@ const HomeScreen = ({ navigation, route }) => {
                   <TouchableOpacity
                     key={listing.id}
                     onPress={() => {
-                      console.log(':', listing.id, t('type'), listing.type);
                       navigation.navigate(
                         listing.type === 'sell' ? 'ProductDetails' : 'BuyOrderDetails', // Changed from 'BuyOrder'
                         {
@@ -838,7 +887,7 @@ const HomeScreen = ({ navigation, route }) => {
                   >
                     <ProductCard
                       productName={listing.name}
-                      price={listing.type === 'sell' ? `₽${listing.price}` : undefined}
+                      price={listing.type === 'sell' ? `₽${Math.round(listing.price)}` : undefined}
                       dormNumber={listing.dorm}
                       productImage={listing.photoUrl}
                       type={listing.type}
@@ -869,13 +918,11 @@ const HomeScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   contentContainer: {
     paddingBottom: 20,
   },
   header: {
-    backgroundColor: '#104d59',
     paddingTop: Platform.OS === 'ios' ? 50 : 20,
     paddingBottom: 10,
     paddingHorizontal: 20,
@@ -885,29 +932,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 5,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+  },
+  headerRight: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    flex: 1,
+    textAlign: 'center',
   },
   headerLogo: {
-    width: 60,
-    height: 60,
-  },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20,
+    width: 50,
+    height: 50,
   },
   signInButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
@@ -917,6 +967,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
+  },
+  themeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  signInDescription: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    opacity: 0.8,
+    marginTop: 4,
   },
   paginationContainer: {
     flexDirection: 'row',
@@ -929,25 +997,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginHorizontal: 5,
     borderWidth: 1,
-    borderColor: '#ddd',
     borderRadius: 5,
   },
-  activePaginationButton: {
-    backgroundColor: '#ff5722',
-    borderColor: '#ff5722',
-  },
   paginationButtonText: {
-    color: '#333',
-  },
-  activePaginationButtonText: {
-    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
   footer: {
-    backgroundColor: '#f8f8f8',
     paddingVertical: 20,
     paddingHorizontal: 15,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
     marginTop: 15,
     alignItems: 'center',
 
@@ -968,10 +1027,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 10,
-    color: '#f4a261',
   },
   footerLink: {
-    color: '#666',
     marginBottom: 10,
     fontSize: 14,
   },
@@ -984,11 +1041,16 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   footerText: {
-    color: '#666',
     fontSize: 14,
   },
   footerSocialContainer: {
     alignItems: 'center',
+  },
+  followDeveloperTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'left',
   },
   footerSocialIcons: {
     flexDirection: 'row',
@@ -1001,7 +1063,6 @@ const styles = StyleSheet.create({
 
   copyrightText: {
     textAlign: 'center',
-    color: 'black',
     fontSize: 12,
   },
   bannerWrapper: {
@@ -1036,7 +1097,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: 'blue',
   },
   noProductsContainer: {
     alignItems: 'center',
@@ -1045,17 +1105,14 @@ const styles = StyleSheet.create({
   },
   noProductsText: {
     fontSize: 18,
-    color: '#888',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     borderRadius: 10,
     paddingHorizontal: 15,
     marginHorizontal: 10,
     marginBottom: 15,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1069,7 +1126,6 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 50,
     fontSize: 16,
-    color: '#333',
   },
   productHeaderContainer: {
     flexDirection: 'row',
@@ -1081,32 +1137,26 @@ const styles = StyleSheet.create({
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 5,
     borderWidth: 1,
-    borderColor: '#ddd',
   },
   sortButtonText: {
     marginLeft: 5,
     fontSize: 16,
-    color: '#333',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
     alignItems: 'center',
   },
   modalContainer: {
-    backgroundColor: 'white',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
     width: '100%',
     maxWidth: 500,  // Optional: limit width on larger screens
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -1121,10 +1171,8 @@ const styles = StyleSheet.create({
   sortOptionButton: {
     padding: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
   selectedSortOption: {
-    backgroundColor: '#f0f0f0',
   },
   sortOptionText: {
     fontSize: 16,
@@ -1132,18 +1180,15 @@ const styles = StyleSheet.create({
   },
   selectedSortOptionText: {
     fontWeight: 'bold',
-    color: '#ff5722',
   },
   cancelButton: {
     marginTop: 15,
     padding: 15,
-    backgroundColor: '#f0f0f0',
     borderRadius: 10,
   },
   cancelButtonText: {
     textAlign: 'center',
     fontSize: 16,
-    color: '#333',
   },
   loadingContainer: {
     flex: 1,

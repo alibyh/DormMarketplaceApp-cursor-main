@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
@@ -15,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
+import { useTheme } from '../../context/ThemeContext';
 import supabase from '../../services/supabaseConfig';
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import LoadingState from '../../components/LoadingState/LoadingState';
@@ -101,6 +103,8 @@ const handleProfileError = (error, t, type = 'FETCH_PROFILE') => {
 
 const AccountScreen = ({ navigation, route }) => {
   const { t, i18n } = useTranslation();
+  const { currentTheme, changeTheme, getThemeColors, THEME_TYPES } = useTheme();
+  const colors = getThemeColors();
   const [userData, setUserData] = useState({
     username: '',
     email: '',
@@ -114,6 +118,7 @@ const AccountScreen = ({ navigation, route }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLanguageModalVisible, setIsLanguageModalVisible] = useState(false);
+  const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
   const [loadingProductIds, setLoadingProductIds] = useState([]);
   const [error, setError] = useState(null);
 
@@ -317,6 +322,14 @@ const AccountScreen = ({ navigation, route }) => {
         return filename;
       }
       
+      // If it's already a Supabase URL (contains the storage path), extract just the filename
+      if (filename.includes('avatars/')) {
+        const parts = filename.split('avatars/');
+        if (parts.length > 1) {
+          filename = parts[1];
+        }
+      }
+      
       // Otherwise, get the public URL from Supabase
       try {
         const { data } = supabase.storage
@@ -334,12 +347,22 @@ const AccountScreen = ({ navigation, route }) => {
     
     // Only try to get a Supabase URL if the avatar_url field actually has a value
     if (profileData.avatar_url) {
+      // Check if it's already a complete URL
+      if (profileData.avatar_url.startsWith('http')) {
+        profilePicValue = profileData.avatar_url;
+      } else {
       profilePicValue = getSupabaseAvatarUrl(profileData.avatar_url);
+      }
     }
     
     // If no URL from profile, try metadata
     if (!profilePicValue && userMetadata && userMetadata.avatar_url) {
+      // Check if it's already a complete URL
+      if (userMetadata.avatar_url.startsWith('http')) {
+        profilePicValue = userMetadata.avatar_url;
+      } else {
       profilePicValue = getSupabaseAvatarUrl(userMetadata.avatar_url);
+      }
     }
     
     
@@ -487,6 +510,22 @@ const AccountScreen = ({ navigation, route }) => {
     }
   }, [userId]);
 
+  // Load saved language preference
+  useEffect(() => {
+    const loadSavedLanguage = async () => {
+      try {
+        const savedLanguage = await AsyncStorage.getItem('userLanguage');
+        if (savedLanguage && (savedLanguage === 'en' || savedLanguage === 'ru')) {
+          i18n.changeLanguage(savedLanguage);
+        }
+      } catch (error) {
+        console.error('Error loading saved language:', error);
+      }
+    };
+
+    loadSavedLanguage();
+  }, [i18n]);
+
   // Initial Data Load
   useEffect(() => {
     const initializeData = async () => {
@@ -545,15 +584,15 @@ const AccountScreen = ({ navigation, route }) => {
   // Logout Handler - Updated to include option for account deletion
   const handleLogout = async () => {
     Alert.alert(
-      t('Confirm Logout'),
-      t('Are you sure you want to log out?'),
+      t('confirmLogout'),
+              t('areYouSureLogout'),
       [
         {
           text: t('Cancel'),
           style: 'cancel'
         },
         {
-          text: t('Logout'),
+                      text: t('logout'),
           onPress: async () => {
             try {
               console.log('Logging out user...');
@@ -581,9 +620,9 @@ const AccountScreen = ({ navigation, route }) => {
             } catch (error) {
               console.error('Logout error:', error);
               Alert.alert(
-                t('Error'),
-                t('Failed to log out. Please try again.'),
-                [{ text: t('OK') }]
+                t('error'),
+                                  t('failedToLogout'),
+                                  [{ text: t('ok') }]
               );
             }
           },
@@ -609,7 +648,7 @@ const AccountScreen = ({ navigation, route }) => {
       navigation.navigate('PlaceAd');
     } else {
       console.error('No suitable add product screen found in navigation');
-      Alert.alert('Navigation Error', 'Unable to find add product screen');
+              Alert.alert(t('navigationError'), t('unableToFindAddProductScreen'));
     }
   };
 
@@ -619,15 +658,15 @@ const AccountScreen = ({ navigation, route }) => {
     
     // Check for specific error types
     if (error.status === 401) {
-      Alert.alert('Authentication Error', 'Please log in again to continue.');
+              Alert.alert(t('authenticationError'), t('pleaseLoginAgain'));
       handleLogout();
       return;
     }
     
     // For all other errors
     Alert.alert(
-      'Operation Failed',
-      `We couldn't complete the ${operation}. Please try again later.`
+      t('operationFailed'),
+              t('operationFailedMessage', { operation })
     );
   };
 
@@ -838,30 +877,23 @@ const AccountScreen = ({ navigation, route }) => {
   };
 
   // Language Change Handler
-  const handleLanguageChange = (lang) => {
+  const handleLanguageChange = async (lang) => {
+    try {
     i18n.changeLanguage(lang);
+      await AsyncStorage.setItem('userLanguage', lang);
     setIsLanguageModalVisible(false);
+    } catch (error) {
+      console.error('Error saving language preference:', error);
+    }
   };
 
-  const ProfileHeader = ({ userData, onEditProfile, onLogout }) => (
-    <View style={styles.profileHeader}>
-      <View style={styles.profileImageContainer}>
-        {userData.profilePicture ? (
-          <Image
-            source={{ uri: userData.profilePicture }}
-            style={styles.profileImage}
-          />
-        ) : (
-          <View style={[styles.profileImage, styles.profileImageFallback]}>
-            <Text style={styles.profileImageFallbackText}>
-              {userData.username ? userData.username.charAt(0).toUpperCase() : '?'}
-            </Text>
-          </View>
-        )}
-      </View>
-      {/* ... rest of header content ... */}
-    </View>
-  );
+  // Theme Change Handler
+  const handleThemeChange = (themeType) => {
+    changeTheme(themeType);
+    setIsThemeModalVisible(false);
+  };
+
+
 
   return (
     <ErrorBoundaryWrapper
@@ -877,9 +909,9 @@ const AccountScreen = ({ navigation, route }) => {
           message={t('errorLoadingProfile')}
         />
       ) : (
-        <SafeAreaView style={styles.safeArea}>
+        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.headerBackground }]}>
           <ScrollView
-            style={styles.container}
+            style={[styles.container, { backgroundColor: colors.surface }]}
             contentContainerStyle={[
               styles.scrollViewContent,
               { paddingTop: 0 } // Remove top padding
@@ -888,8 +920,8 @@ const AccountScreen = ({ navigation, route }) => {
               <RefreshControl
                 refreshing={isRefreshing}
                 onRefresh={handleRefresh}
-                colors={['#ff5722']}
-                tintColor="#ff5722"
+                colors={[colors.primary]}
+                tintColor={colors.primary}
                 title={t('Pull to refresh')}
                 progressViewOffset={50}
               />
@@ -897,7 +929,7 @@ const AccountScreen = ({ navigation, route }) => {
           >
             {/* Profile Section */}
             {userId ? (
-              <View style={styles.profileHeader}>
+              <View style={[styles.profileHeader, { backgroundColor: colors.headerBackground }]}>
                 <View style={styles.profileImageContainer}>
                   <View style={styles.profileImageContainer}>
                     {userData.profilePicture ? (
@@ -906,8 +938,8 @@ const AccountScreen = ({ navigation, route }) => {
                         style={styles.profileImage}
                       />
                     ) : (
-                      <View style={[styles.profileImage, styles.profileImageFallback]}>
-                        <Text style={styles.profileImageFallbackText}>
+                      <View style={[styles.profileImage, styles.profileImageFallback, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <Text style={[styles.profileImageFallbackText, { color: colors.textSecondary }]}>
                           {userData.username ? userData.username.charAt(0).toUpperCase() : '?'}
                         </Text>
                       </View>
@@ -922,8 +954,8 @@ const AccountScreen = ({ navigation, route }) => {
                       onPress={handleEditProfile}
                       hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                     >
-                      <View style={styles.headerButtonContainer}>
-                        <Ionicons name="create-outline" size={28} color="#fff" />
+                      <View style={[styles.headerButtonContainer, { backgroundColor: colors.overlay }]}>
+                        <Ionicons name="create-outline" size={28} color={colors.headerText} />
                       </View>
                     </TouchableOpacity>
                     
@@ -932,56 +964,56 @@ const AccountScreen = ({ navigation, route }) => {
                       onPress={handleLogout}
                       hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                     >
-                      <View style={styles.headerButtonContainer}>
-                        <Ionicons name="log-out-outline" size={28} color="#ff3b30" />
+                      <View style={[styles.headerButtonContainer, { backgroundColor: colors.overlay }]}>
+                        <Ionicons name="log-out-outline" size={28} color={colors.error} />
                       </View>
                     </TouchableOpacity>
                   </View>
                   
-                  <Text style={styles.username}>{userData.username || t('User')}</Text>
-                  <Text style={styles.email}>{userData.email}</Text>
+                  <Text style={[styles.username, { color: colors.headerText }]}>{userData.username || t('User')}</Text>
+                  <Text style={[styles.email, { color: colors.headerText }]}>{userData.email}</Text>
                   
                   {/* Dorm */}
                   <View style={styles.profileDetailRow}>
-                    <Ionicons name="home-outline" size={20} color="#666" style={styles.detailIcon} />
-                    <Text style={styles.profileDetailText}>
+                    <Ionicons name="home-outline" size={20} color={colors.headerText} style={styles.detailIcon} />
+                    <Text style={[styles.profileDetailText, { color: colors.headerText }]}>
                       {userData.dorm || t('No dorm specified')}
                     </Text>
                   </View>
                   
                   {/* Phone Number */}
                   <View style={styles.profileDetailRow}>
-                    <Ionicons name="call-outline" size={20} color="#666" style={styles.detailIcon} />
-                    <Text style={styles.profileDetailText}>
+                    <Ionicons name="call-outline" size={20} color={colors.headerText} style={styles.detailIcon} />
+                    <Text style={[styles.profileDetailText, { color: colors.headerText }]}>
                       {userData.phone_number || t('No phone specified')}
                     </Text>
                   </View>
                 </View>
               </View>
             ) : (
-              <View style={styles.signInPrompt}>
-                <View style={styles.signInPromptContent}>
+              <View style={[styles.signInPrompt, { backgroundColor: colors.surface }]}>
+                <View style={[styles.signInPromptContent, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}>
                   <View style={styles.signInIconContainer}>
-                    <Ionicons name="person-circle-outline" size={100} color="#fff" />
+                    <Ionicons name="person-circle-outline" size={100} color={colors.primary} />
                   </View>
-                  <Text style={styles.signInPromptTitle}>{t('Welcome to Dorm Marketplace')}</Text>
-                  <Text style={styles.signInPromptText}>
+                  <Text style={[styles.signInPromptTitle, { color: colors.text }]}>{t('welcomeToDormMarketplace')}</Text>
+                  <Text style={[styles.signInPromptText, { color: colors.textSecondary }]}>
                     {t('signInToAccess')}
                   </Text>
                   <View style={styles.signInButtonContainer}>
                     <TouchableOpacity
-                      style={styles.signInPromptButton}
+                      style={[styles.signInPromptButton, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}
                       onPress={() => navigation.navigate('Login')}
                     >
-                      <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
-                      <Text style={styles.signInPromptButtonText}>{t('signIn')}</Text>
+                      <Ionicons name="log-in-outline" size={20} color={colors.headerText} />
+                      <Text style={[styles.signInPromptButtonText, { color: colors.headerText }]}>{t('signIn')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={styles.signUpPromptButton}
+                      style={[styles.signUpPromptButton, { backgroundColor: colors.secondary, shadowColor: colors.shadow }]}
                       onPress={() => navigation.navigate('SignUp')}
                     >
-                      <Ionicons name="person-add-outline" size={20} color="#FFFFFF" />
-                      <Text style={styles.signUpPromptButtonText}>{t('Create Account')}</Text>
+                      <Ionicons name="person-add-outline" size={20} color={colors.headerText} />
+                      <Text style={[styles.signUpPromptButtonText, { color: colors.headerText }]}>{t('createAccount')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -989,20 +1021,40 @@ const AccountScreen = ({ navigation, route }) => {
             )}
 
             {/* Settings Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{t('Settings')}</Text>
+            <View style={[styles.section, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('Settings')}</Text>
               
               {/* Language Setting Item */}
               <TouchableOpacity
-                style={styles.settingItem}
+                style={[styles.settingItem, { borderBottomColor: colors.border }]}
                 onPress={() => setIsLanguageModalVisible(true)}
               >
                 <View style={styles.settingContent}>
-                  <Ionicons name="language-outline" size={24} color="#ff5722" style={styles.settingIcon} />
-                  <Text style={styles.settingText}>{t('Language')}</Text>
+                  <Ionicons name="language-outline" size={24} color={colors.primary} style={styles.settingIcon} />
+                  <Text style={[styles.settingText, { color: colors.text }]}>{t('Language')}</Text>
                 </View>
-                <Text style={styles.settingValue}>
+                <Text style={[styles.settingValue, { color: colors.textSecondary }]}>
                   {i18n.language === 'en' ? t('english') : t('russian')}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Theme Setting Item */}
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomColor: colors.border }]}
+                onPress={() => setIsThemeModalVisible(true)}
+              >
+                <View style={styles.settingContent}>
+                  <Ionicons 
+                    name={currentTheme === 'light' ? 'sunny-outline' : 'moon-outline'} 
+                    size={24} 
+                    color={colors.primary} 
+                    style={styles.settingIcon} 
+                  />
+                  <Text style={[styles.settingText, { color: colors.text }]}>{t('theme')}</Text>
+                </View>
+                <Text style={[styles.settingValue, { color: colors.textSecondary }]}>
+                  {currentTheme === 'light' ? t('lightTheme') : 
+                   currentTheme === 'dark' ? t('darkTheme') : t('systemTheme')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1011,8 +1063,8 @@ const AccountScreen = ({ navigation, route }) => {
             {userId && (
               <>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>{t('My Ads')}</Text>
-                  <Text style={styles.sectionSubtitle}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('My Ads')}</Text>
+                  <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
                     {userProducts.length} {userProducts.length === 1 ? t('item') : t('items')}
                   </Text>
                 </View>
@@ -1022,43 +1074,43 @@ const AccountScreen = ({ navigation, route }) => {
             {userId && (
               <>
                 {userProducts.length === 0 ? (
-                  <View style={styles.noProductsContainer}>
-                    <Ionicons name="basket-outline" size={60} color="#ddd" style={styles.noProductsIcon} />
-                    <Text style={styles.noProductsText}>
+                  <View style={[styles.noProductsContainer, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+                    <Ionicons name="basket-outline" size={60} color={colors.textSecondary} style={styles.noProductsIcon} />
+                    <Text style={[styles.noProductsText, { color: colors.textSecondary }]}>
                       {t('You haven\'t posted any ads yet')}
                     </Text>
                     <TouchableOpacity 
-                      style={styles.addFirstProductButton}
+                      style={[styles.addFirstProductButton, { backgroundColor: colors.primary }]}
                       onPress={handleAddProduct}
                     >
-                      <Text style={styles.addFirstProductText}>{t('Add your first product')}</Text>
+                      <Text style={[styles.addFirstProductText, { color: colors.headerText }]}>{t('Add your first product')}</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
                   <View style={styles.productsGrid}>
                     {userProducts.map((item) => (
-                      <View key={item.id} style={styles.productCard}>
+                      <View key={item.id} style={[styles.productCard, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
                         <Image
                           source={{
                             uri: item.main_image_url || 
                                  `https://via.placeholder.com/150/FF5722/FFFFFF?text=${item.name.charAt(0).toUpperCase()}`
                           }}
-                          style={styles.productImage}
+                          style={[styles.productImage, { backgroundColor: colors.surface }]}
                           onError={(e) => {
                             console.error('Image load error:', e.nativeEvent.error);
                             console.error('Failed URL:', item.main_image_url);
                           }}
                         />
-                        <View style={styles.productDetails}>
-                          <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
+                        <View style={[styles.productDetails, { backgroundColor: colors.card }]}>
+                          <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
                           {item.type === 'sell' && (
-                            <Text style={styles.productPrice}>₽{item.price.toFixed(2)}</Text>
+                            <Text style={[styles.productPrice, { color: colors.primary }]}>₽{Math.round(item.price)}</Text>
                           )}
-                          <Text style={styles.productDorm}>{item.dorm || t('No location specified')}</Text>
+                          <Text style={[styles.productDorm, { color: colors.textSecondary }]}>{item.dorm || t('No location specified')}</Text>
                           
-                          <View style={styles.productActions}>
+                          <View style={[styles.productActions, { borderTopColor: colors.border }]}>
                             <TouchableOpacity
-                              style={styles.editButton}
+                              style={[styles.editButton, { backgroundColor: colors.primary }]}
                               onPress={() => {
                                 navigation.navigate('EditAd', {
                                   product: item,
@@ -1067,25 +1119,25 @@ const AccountScreen = ({ navigation, route }) => {
                               }}
                               disabled={isProductLoading(item.id)}
                             >
-                              <Ionicons name="create-outline" size={22} color="#fff" />
-                              <Text style={styles.actionButtonText}>{t('edit')}</Text>
+                              <Ionicons name="create-outline" size={22} color={colors.headerText} />
+                              <Text style={[styles.actionButtonText, { color: colors.headerText }]}>{t('edit')}</Text>
                             </TouchableOpacity>
                             
                             <TouchableOpacity
-                              style={styles.deleteButton}
+                              style={[styles.deleteButton, { backgroundColor: colors.error }]}
                               onPress={() => item.type === 'buy' ? 
                                 handleDeleteBuyOrder(item.id) : 
                                 handleDeleteProduct(item.id)}
                               disabled={isProductLoading(item.id)}
                             >
-                              <Ionicons name="trash-outline" size={22} color="#fff" />
-                              <Text style={styles.actionButtonText}>{t('delete')}</Text>
+                              <Ionicons name="trash-outline" size={22} color={colors.headerText} />
+                              <Text style={[styles.actionButtonText, { color: colors.headerText }]}>{t('delete')}</Text>
                             </TouchableOpacity>
                           </View>
                         </View>
                         {item.type === 'buy' && (
-                          <View style={styles.buyOrderBadge}>
-                            <Text style={styles.buyOrderBadgeText}>{t('lookingFor')}</Text>
+                          <View style={[styles.buyOrderBadge, { backgroundColor: colors.secondary }]}>
+                            <Text style={[styles.buyOrderBadgeText, { color: colors.headerText }]}>{t('lookingFor')}</Text>
                           </View>
                         )}
                       </View>
@@ -1102,43 +1154,47 @@ const AccountScreen = ({ navigation, route }) => {
               transparent={true}
               onRequestClose={() => setIsLanguageModalVisible(false)}
             >
-              <View style={styles.modalContainer}>
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>{t('selectLanguage')}</Text>
+              <View style={[styles.modalContainer, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                <View style={[styles.modalContent, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>{t('selectLanguage')}</Text>
                   
                   <TouchableOpacity 
                     style={[
                       styles.languageOption,
-                      i18n.language === 'en' && styles.languageOptionSelected
+                      { borderBottomColor: colors.border },
+                      i18n.language === 'en' && { backgroundColor: colors.primary + '20' }
                     ]}
                     onPress={() => handleLanguageChange('en')}
                   >
                     <Text style={[
                       styles.languageOptionText,
-                      i18n.language === 'en' && styles.languageOptionTextSelected
+                      { color: colors.text },
+                      i18n.language === 'en' && { color: colors.primary, fontWeight: 'bold' }
                     ]}>
                       {t('english')}
                     </Text>
                     {i18n.language === 'en' && (
-                      <Ionicons name="checkmark-circle" size={24} color="#ff5722" />
+                      <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
                     )}
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
                     style={[
                       styles.languageOption,
-                      i18n.language === 'ru' && styles.languageOptionSelected
+                      { borderBottomColor: colors.border },
+                      i18n.language === 'ru' && { backgroundColor: colors.primary + '20' }
                     ]}
                     onPress={() => handleLanguageChange('ru')}
                   >
                     <Text style={[
                       styles.languageOptionText,
-                      i18n.language === 'ru' && styles.languageOptionTextSelected
+                      { color: colors.text },
+                      i18n.language === 'ru' && { color: colors.primary, fontWeight: 'bold' }
                     ]}>
                       {t('russian')}
                     </Text>
                     {i18n.language === 'ru' && (
-                      <Ionicons name="checkmark-circle" size={24} color="#ff5722" />
+                      <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
                     )}
                   </TouchableOpacity>
                   
@@ -1146,7 +1202,97 @@ const AccountScreen = ({ navigation, route }) => {
                     style={styles.cancelButton}
                     onPress={() => setIsLanguageModalVisible(false)}
                   >
-                    <Text style={styles.cancelButtonText}>{t('cancel')}</Text>
+                    <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>{t('cancel')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+
+            {/* Theme Selection Modal */}
+            <Modal
+              visible={isThemeModalVisible}
+              animationType="fade"
+              transparent={true}
+              onRequestClose={() => setIsThemeModalVisible(false)}
+            >
+              <View style={[styles.modalContainer, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                <View style={[styles.modalContent, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>{t('themeSetting')}</Text>
+                  
+                  <TouchableOpacity 
+                    style={[
+                      styles.languageOption,
+                      { borderBottomColor: colors.border },
+                      currentTheme === THEME_TYPES.LIGHT && { backgroundColor: colors.primary + '20' }
+                    ]}
+                    onPress={() => handleThemeChange(THEME_TYPES.LIGHT)}
+                  >
+                    <View style={styles.themeOptionContent}>
+                      <Ionicons name="sunny-outline" size={24} color={colors.primary} />
+                      <Text style={[
+                        styles.languageOptionText,
+                        { color: colors.text },
+                        currentTheme === THEME_TYPES.LIGHT && { color: colors.primary, fontWeight: 'bold' }
+                      ]}>
+                        {t('lightTheme')}
+                      </Text>
+                    </View>
+                    {currentTheme === THEME_TYPES.LIGHT && (
+                      <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[
+                      styles.languageOption,
+                      { borderBottomColor: colors.border },
+                      currentTheme === THEME_TYPES.DARK && { backgroundColor: colors.primary + '20' }
+                    ]}
+                    onPress={() => handleThemeChange(THEME_TYPES.DARK)}
+                  >
+                    <View style={styles.themeOptionContent}>
+                      <Ionicons name="moon-outline" size={24} color={colors.primary} />
+                      <Text style={[
+                        styles.languageOptionText,
+                        { color: colors.text },
+                        currentTheme === THEME_TYPES.DARK && { color: colors.primary, fontWeight: 'bold' }
+                      ]}>
+                        {t('darkTheme')}
+                      </Text>
+                    </View>
+                    {currentTheme === THEME_TYPES.DARK && (
+                      <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[
+                      styles.languageOption,
+                      { borderBottomColor: colors.border },
+                      currentTheme === THEME_TYPES.SYSTEM && { backgroundColor: colors.primary + '20' }
+                    ]}
+                    onPress={() => handleThemeChange(THEME_TYPES.SYSTEM)}
+                  >
+                    <View style={styles.themeOptionContent}>
+                      <Ionicons name="settings-outline" size={24} color={colors.primary} />
+                      <Text style={[
+                        styles.languageOptionText,
+                        { color: colors.text },
+                        currentTheme === THEME_TYPES.SYSTEM && { color: colors.primary, fontWeight: 'bold' }
+                      ]}>
+                        {t('systemTheme')}
+                      </Text>
+                    </View>
+                    {currentTheme === THEME_TYPES.SYSTEM && (
+                      <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.cancelButton}
+                    onPress={() => setIsThemeModalVisible(false)}
+                  >
+                    <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>{t('cancel')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -1161,11 +1307,9 @@ const AccountScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#104d59', // Match the header color
   },
   container: {
     flex: 1,
-    backgroundColor: '#e5e5e5',
   },
   scrollViewContent: {
     paddingBottom: 30,
@@ -1174,10 +1318,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
   },
   profileHeader: {
-    backgroundColor: '#104d59',
     paddingTop: Platform.OS === 'ios' ? 30 : 20,
     paddingBottom: 20,
     paddingHorizontal: 20,
@@ -1209,12 +1351,10 @@ const styles = StyleSheet.create({
   username: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#FFFFFF',
     marginBottom: 4,
   },
   email: {
     fontSize: 16,
-    color: '#fff9f7', // Light color for better contrast
     marginBottom: 12,
   },
   profileDetailRow: {
@@ -1225,7 +1365,6 @@ const styles = StyleSheet.create({
   profileDetailText: {
     flex: 1,
     fontSize: 14,
-    color: '#fff9f7', // Light color for better contrast
     
   },
   detailIcon: {
@@ -1233,7 +1372,6 @@ const styles = StyleSheet.create({
     width: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    color: '#ffffff', // White color for icons
     
   },
   sectionHeader: {
@@ -1246,22 +1384,17 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ff5722',
     
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: '#888',
   },
   noProductsContainer: {
     alignItems: 'center',
     padding: 30,
-    backgroundColor: '#fff',
     margin: 20,
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: '#f0f0f0',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.1,
     shadowRadius: 10,
@@ -1272,18 +1405,15 @@ const styles = StyleSheet.create({
   },
   noProductsText: {
     fontSize: 16,
-    color: '#666',
     marginBottom: 20,
     textAlign: 'center',
   },
   addFirstProductButton: {
-    backgroundColor: '#ff5722',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 10,
   },
   addFirstProductText: {
-    color: '#fff',
     fontWeight: 'bold',
   },
   productsGrid: {
@@ -1292,11 +1422,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', // Center cards horizontally
   },
   productCard: {
-    backgroundColor: '#FAFBFB',
     marginBottom: 15,
     borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: 'red',
     shadowOffset: { 
       width: 0, 
       height: 4 // Increased shadow offset
@@ -1307,12 +1435,10 @@ const styles = StyleSheet.create({
     width: '92%',
     alignSelf: 'center',
     borderWidth: Platform.OS === 'android' ? 1 : 0,
-    borderColor: 'rgba(0,0,0,0.1)',
   },
   productImage: {
     width: '100%',
     height: 180,
-    backgroundColor: '#f5f5f5',
     resizeMode: 'cover',
   },
   productDetails: {
@@ -1321,14 +1447,12 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2c3e50',
     marginBottom: 6,
     lineHeight: 22,
   },
   productPrice: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#104d59',
     marginBottom: 8,
   },
   dormContainer: {
@@ -1338,7 +1462,6 @@ const styles = StyleSheet.create({
   },
   productDorm: {
     fontSize: 14,
-    color: '#666',
     marginLeft: 4,
   },
   productActions: {
@@ -1349,16 +1472,13 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
   },
   deleteButton: {
-    backgroundColor: '#ff3b30',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
-    shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
@@ -1368,7 +1488,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   deleteButtonText: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
@@ -1377,13 +1496,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     left: 12,
-    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
   },
   hiddenBadgeText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -1391,15 +1508,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalContent: {
     width: '80%',
-    backgroundColor: 'white',
     borderRadius: 15,
     padding: 20,
     alignItems: 'center',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
@@ -1409,7 +1523,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 20,
-    color: '#333',
   },
   languageOption: {
     flexDirection: 'row',
@@ -1418,17 +1531,13 @@ const styles = StyleSheet.create({
     padding: 15,
     width: '100%',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   languageOptionSelected: {
-    backgroundColor: '#fff9f7',
   },
   languageOptionText: {
     fontSize: 16,
-    color: '#333',
   },
   languageOptionTextSelected: {
-    color: '#ff5722',
     fontWeight: 'bold',
   },
   cancelButton: {
@@ -1438,31 +1547,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#ff3b30',
     fontSize: 16,
     fontWeight: 'bold',
   },
   settingValue: {
     fontSize: 16,
-    color: '#666',
   },
   profileImageFallback: {
-    backgroundColor: '#ff5722',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#f0f0f0',
   },
   profileImageFallbackText: {
     fontSize: 40,
     fontWeight: 'bold',
-    color: 'white',
   },
   section: {
     marginBottom: 20,
-    backgroundColor: '#E9E9E9',
     borderRadius: 10,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -1475,7 +1577,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
   },
   settingContent: {
     flexDirection: 'row',
@@ -1483,16 +1584,20 @@ const styles = StyleSheet.create({
   },
   settingText: {
     fontSize: 16,
-    color: '#333',
   },
   settingIcon: {
     marginRight: 10,
+  },
+  themeOptionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 10,
   },
   editPictureButton: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: '#ff5722',
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -1526,7 +1631,6 @@ const styles = StyleSheet.create({
   },
   
   headerButtonContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     padding: 8, // Slightly reduced from 10
     borderRadius: 18, // Slightly reduced from 20
   },
@@ -1534,11 +1638,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     right: 12,
-    backgroundColor: '#104d59',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 6,
-    shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
@@ -1548,18 +1650,15 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   buyOrderBadgeText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: '600',
   },
   editButton: {
-    backgroundColor: '#104d59',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 8,
-    shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
@@ -1569,13 +1668,11 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   actionButtonText: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
   },
   signInPrompt: {
-    backgroundColor: '#104d59',
     paddingTop: Platform.OS === 'ios' ? 50 : 40,
     paddingBottom: 60,
     paddingHorizontal: 20,
@@ -1595,13 +1692,12 @@ const styles = StyleSheet.create({
   signInPromptTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#FFFFFF',
     marginTop: 20,
     marginBottom: 10,
+    textAlign: 'center',
   },
   signInPromptText: {
     fontSize: 16,
-    color: '#fff9f7',
     textAlign: 'center',
     marginBottom: 30,
     lineHeight: 24,
@@ -1614,11 +1710,9 @@ const styles = StyleSheet.create({
     gap: 15,
   },
   signInPromptButton: {
-    backgroundColor: '#ff5722',
     paddingHorizontal: 25,
     paddingVertical: 15,
     borderRadius: 25,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -1630,16 +1724,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   signInPromptButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
   signUpPromptButton: {
-    backgroundColor: '#104d59',
     paddingHorizontal: 25,
     paddingVertical: 15,
     borderRadius: 25,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -1651,7 +1742,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   signUpPromptButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },

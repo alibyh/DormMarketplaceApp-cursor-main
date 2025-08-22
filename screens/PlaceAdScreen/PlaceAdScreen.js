@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../context/ThemeContext';
 import {
   View,
   Text,
@@ -54,6 +55,8 @@ const testBucketAccess = async () => {
 
 const PlaceAdScreen = ({ navigation }) => {
   const { t } = useTranslation();
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
   const [productData, setProductData] = useState({
     name: '',
     description: '',
@@ -113,8 +116,8 @@ const PlaceAdScreen = ({ navigation }) => {
       if (!user) {
         // User is not authenticated, show sign-in prompt
         Alert.alert(
-          t('Authentication Required'),
-          t('Please sign in to place an ad'),
+          t('authenticationRequired'),
+          t('pleaseSignInToPlaceAd'),
           [
             {
               text: t('Cancel'),
@@ -122,7 +125,7 @@ const PlaceAdScreen = ({ navigation }) => {
               onPress: () => navigation.goBack()
             },
             {
-              text: t('Sign In'),
+              text: t('signIn'),
               onPress: () => navigation.navigate('Login')
             }
           ]
@@ -137,8 +140,8 @@ const PlaceAdScreen = ({ navigation }) => {
       console.error('Auth check error:', error);
       setIsAuthenticated(false);
       Alert.alert(
-        t('Error'),
-        t('Unable to verify authentication'),
+        t('error'),
+        t('unableToVerifyAuthentication'),
         [
           {
             text: t('OK'),
@@ -219,7 +222,7 @@ const PlaceAdScreen = ({ navigation }) => {
   const pickImageFromLibrary = async () => {
     try {
       if (images.length >= 5) {
-        Alert.alert('Error', 'Maximum 5 images allowed');
+        Alert.alert(t('error'), t('maximumImagesAllowed'));
         return;
       }
 
@@ -241,7 +244,7 @@ const PlaceAdScreen = ({ navigation }) => {
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      Alert.alert('Error', 'Could not select image');
+      Alert.alert(t('error'), t('couldNotSelectImage'));
     }
   };
 
@@ -261,7 +264,7 @@ const PlaceAdScreen = ({ navigation }) => {
     try {
       console.log('Starting submission...');
       if (images.length === 0) {
-        Alert.alert('Error', 'Please add at least one image');
+        Alert.alert(t('error'), t('pleaseAddOneImage'));
         return;
       }
 
@@ -385,9 +388,9 @@ const PlaceAdScreen = ({ navigation }) => {
       if (updateError) throw updateError;
 
       Alert.alert(
-        t('Success'),
+        t('success'),
         t(values.adType === 'sell' ? 'productPosted' : 'buyOrderPosted'),
-        [{ text: 'OK', onPress: () => navigation.navigate('Home') }]
+                  [{ text: t('ok'), onPress: () => navigation.navigate('Home') }]
       );
 
       setImages([]);
@@ -396,10 +399,10 @@ const PlaceAdScreen = ({ navigation }) => {
     } catch (error) {
       console.error('Submission error:', error);
       Alert.alert(
-        'Error',
-        error.message === 'Not authenticated' 
-          ? 'Please log in to post items'
-          : 'Failed to create listing. Please try again.'
+        t('error'),
+                  error.message === 'Not authenticated' 
+            ? t('pleaseLoginToPost')
+            : t('failedToCreateListing')
       );
     } finally {
       setSubmitting(false);
@@ -409,9 +412,9 @@ const PlaceAdScreen = ({ navigation }) => {
   // Show loading while checking authentication
   if (isCheckingAuth) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ff5722" />
-        <Text style={styles.loadingText}>{t('Checking authentication...')}</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('Checking authentication...')}</Text>
       </View>
     );
   }
@@ -419,24 +422,24 @@ const PlaceAdScreen = ({ navigation }) => {
   // Show sign-in prompt if not authenticated
   if (!isAuthenticated) {
     return (
-      <View style={styles.signInPrompt}>
-        <View style={styles.signInPromptContent}>
-          <Ionicons name="person-circle-outline" size={80} color="#ff5722" />
-          <Text style={styles.signInPromptTitle}>{t('Authentication Required')}</Text>
-          <Text style={styles.signInPromptText}>
-            {t('Please sign in to place an ad')}
+      <View style={[styles.signInPrompt, { backgroundColor: colors.background }]}>
+        <View style={[styles.signInPromptContent, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+          <Ionicons name="person-circle-outline" size={80} color={colors.primary} />
+          <Text style={[styles.signInPromptTitle, { color: colors.text }]}>{t('authenticationRequired')}</Text>
+          <Text style={[styles.signInPromptText, { color: colors.textSecondary }]}>
+            {t('pleaseSignInToPlaceAd')}
           </Text>
           <TouchableOpacity
-            style={styles.signInPromptButton}
+            style={[styles.signInPromptButton, { backgroundColor: colors.primary }]}
             onPress={() => navigation.navigate('Login')}
           >
-            <Text style={styles.signInPromptButtonText}>{t('Sign In')}</Text>
+            <Text style={[styles.signInPromptButtonText, { color: colors.headerText }]}>{t('signIn')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.backButtonText}>{t('Go Back')}</Text>
+            <Text style={[styles.backButtonText, { color: colors.textSecondary }]}>{t('goBack')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -460,24 +463,26 @@ const PlaceAdScreen = ({ navigation }) => {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={{ flex: 1 }}
           >
-            <ScrollView style={styles.container}>
-              <View style={styles.header}>
-                <Text style={styles.title}>{t('Place New Ad')}</Text>
+            <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+                              <View style={[styles.header, { backgroundColor: colors.headerBackground }]}>
+                  <Text style={[styles.title, { color: colors.headerText }]}>{t('Place New Ad')}</Text>
                 <View style={styles.adTypeContainer}>
                   <TouchableOpacity
                     style={[
                       styles.adTypeButton,
-                      adType === 'sell' && styles.adTypeButtonActive
+                      { backgroundColor: colors.card, borderColor: colors.border },
+                      adType === 'sell' && { backgroundColor: colors.primary }
                     ]}
                     onPress={() => handleAdTypeChange('sell')}
                   >
                     <Ionicons
                       name="pricetag-outline"
                       size={20}
-                      color={adType === 'sell' ? '#fff' : '#104d59'}
+                      color={adType === 'sell' ? colors.headerText : colors.secondary}
                     />
                     <Text style={[
                       styles.adTypeText,
+                      { color: adType === 'sell' ? colors.headerText : colors.text },
                       adType === 'sell' && styles.adTypeTextActive
                     ]}>
                       {t('Sell Item')}
@@ -487,17 +492,19 @@ const PlaceAdScreen = ({ navigation }) => {
                   <TouchableOpacity
                     style={[
                       styles.adTypeButton,
-                      adType === 'buy' && styles.adTypeButtonActive
+                      { backgroundColor: colors.card, borderColor: colors.border },
+                      adType === 'buy' && { backgroundColor: colors.primary }
                     ]}
                     onPress={() => handleAdTypeChange('buy')}
                   >
                     <Ionicons
                       name="search-outline"
                       size={20}
-                      color={adType === 'buy' ? '#fff' : '#104d59'}
+                      color={adType === 'buy' ? colors.headerText : colors.secondary}
                     />
                     <Text style={[
                       styles.adTypeText,
+                      { color: adType === 'buy' ? colors.headerText : colors.text },
                       adType === 'buy' && styles.adTypeTextActive
                     ]}>
                       {t('Want to Buy')}
@@ -506,26 +513,28 @@ const PlaceAdScreen = ({ navigation }) => {
                 </View>
               </View>
 
-              <View style={styles.formContainer}>
+              <View style={[styles.formContainer, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>{t('Product Name')}</Text>
+                  <Text style={[styles.label, { color: colors.text }]}>{t('Product Name')}</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
                     placeholder={adType === 'sell' ? t('What are you selling?') : t('What are you looking for?')}
+                    placeholderTextColor={colors.placeholder}
                     value={values.name}
                     onChangeText={handleChange('name')}
                     onBlur={handleBlur('name')}
                   />
                   {touched.name && errors.name && (
-                    <Text style={styles.errorText}>{errors.name}</Text>
+                    <Text style={[styles.errorText, { color: colors.error }]}>{errors.name}</Text>
                   )}
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>{t('Description')}</Text>
+                  <Text style={[styles.label, { color: colors.text }]}>{t('Description')}</Text>
                   <TextInput
-                    style={[styles.input, styles.textArea]}
+                    style={[styles.input, styles.textArea, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
                     placeholder={adType === 'sell' ? t('Describe your item') : t('Describe what you want to buy')}
+                    placeholderTextColor={colors.placeholder}
                     value={values.description}
                     onChangeText={handleChange('description')}
                     onBlur={handleBlur('description')}
@@ -533,32 +542,34 @@ const PlaceAdScreen = ({ navigation }) => {
                     numberOfLines={4}
                   />
                   {touched.description && errors.description && (
-                    <Text style={styles.errorText}>{errors.description}</Text>
+                    <Text style={[styles.errorText, { color: colors.error }]}>{errors.description}</Text>
                   )}
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>{t('Dorm/Location')}</Text>
+                  <Text style={[styles.label, { color: colors.text }]}>{t('Dorm/Location')}</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
                     placeholder={t('Enter your dorm')}
+                    placeholderTextColor={colors.placeholder}
                     value={values.dorm}
                     onChangeText={handleChange('dorm')}
                     onBlur={handleBlur('dorm')}
                   />
                   {touched.dorm && errors.dorm && (
-                    <Text style={styles.errorText}>{errors.dorm}</Text>
+                    <Text style={[styles.errorText, { color: colors.error }]}>{errors.dorm}</Text>
                   )}
                 </View>
 
                 {adType === 'sell' && (
                   <View style={styles.inputGroup}>
-                    <Text style={styles.label}>{t('Price (Rubles)')}</Text>
-                    <View style={styles.priceInput}>
-                      <Text style={styles.currencySymbol}>₽</Text>
+                    <Text style={[styles.label, { color: colors.text }]}>{t('Price (Rubles)')}</Text>
+                    <View style={[styles.priceInput, { borderColor: colors.inputBorder }]}>
+                      <Text style={[styles.currencySymbol, { color: colors.text }]}>₽</Text>
                       <TextInput
-                        style={styles.priceTextInput}
+                        style={[styles.priceTextInput, { color: colors.text }]}
                         placeholder="0"
+                        placeholderTextColor={colors.placeholder}
                         value={values.price}
                         onChangeText={handleChange('price')}
                         onBlur={handleBlur('price')}
@@ -566,20 +577,20 @@ const PlaceAdScreen = ({ navigation }) => {
                       />
                     </View>
                     {touched.price && errors.price && (
-                      <Text style={styles.errorText}>{t(errors.price)}</Text>
+                      <Text style={[styles.errorText, { color: colors.error }]}>{t(errors.price)}</Text>
                     )}
                   </View>
                 )}
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>{t('Images (up to 5)')}</Text>
+                  <Text style={[styles.label, { color: colors.text }]}>{t('Images (up to 5)')}</Text>
                   <TouchableOpacity
-                    style={styles.imagePickerButton}
+                    style={[styles.imagePickerButton, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}
                     onPress={pickImageFromLibrary}
                   >
-                    <View style={styles.imagePickerButtonInner} />
-                    <AntDesign name="camera" size={24} color="white" style={{ marginRight: 8 }} />
-                    <Text style={styles.imagePickerText}>
+                    <View style={[styles.imagePickerButtonInner, { backgroundColor: colors.primary }]} />
+                    <AntDesign name="camera" size={24} color={colors.headerText} style={{ marginRight: 8 }} />
+                    <Text style={[styles.imagePickerText, { color: colors.headerText }]}>
                       {images.length === 0 
                         ? t('addFirstPhoto')
                         : t('photosRemaining', { count: 5 - images.length })}
@@ -589,7 +600,7 @@ const PlaceAdScreen = ({ navigation }) => {
 
                 {images.length > 0 && (
                   <View style={styles.inputGroup}>
-                    <Text style={styles.subLabel}>{t('SelectedImages')}</Text>
+                    <Text style={[styles.subLabel, { color: colors.textSecondary }]}>{t('SelectedImages')}</Text>
                     <View style={styles.imagePreviewContainer}>
                       {images.map((image, index) => (
                         <View key={index} style={styles.imagePreview}>
@@ -598,27 +609,27 @@ const PlaceAdScreen = ({ navigation }) => {
                             style={styles.previewImage}
                             defaultSource={require('../../assets/placeholder.png')}
                           />
-                          <View style={styles.imageOverlay} />
+                          <View style={[styles.imageOverlay, { backgroundColor: colors.overlay }]} />
                           <TouchableOpacity
                             style={styles.removeImageButton}
                             onPress={() => removeImage(index)}
                           >
-                            <Ionicons name="close-circle" size={22} color="#fff" />
+                            <Ionicons name="close-circle" size={22} color={colors.headerText} />
                           </TouchableOpacity>
                           {index === 0 && (
-                            <View style={styles.mainImageBadge}>
-                              <Text style={styles.mainImageText}>{t('Main')}</Text>
+                            <View style={[styles.mainImageBadge, { backgroundColor: colors.primary }]}>
+                              <Text style={[styles.mainImageText, { color: colors.headerText }]}>{t('main')}</Text>
                             </View>
                           )}
                         </View>
                       ))}
                       {images.length < 5 && (
                         <TouchableOpacity
-                          style={styles.addMoreImagesButton}
+                          style={[styles.addMoreImagesButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                           onPress={pickImageFromLibrary}
                         >
-                          <Ionicons name="add-circle" size={24} color="#ff794e" />
-                          <Text style={styles.addMoreImagesText}>
+                          <Ionicons name="add-circle" size={24} color={colors.primary} />
+                          <Text style={[styles.addMoreImagesText, { color: colors.textSecondary }]}>
                             {t('photosRemaining', { count: 5 - images.length })}
                           </Text>
                         </TouchableOpacity>
@@ -628,21 +639,25 @@ const PlaceAdScreen = ({ navigation }) => {
                 )}
 
                 <TouchableOpacity
-                  style={[styles.submitButton, isSubmitting && styles.disabledButton]}
+                  style={[
+                    styles.submitButton, 
+                    { backgroundColor: colors.primary, shadowColor: colors.shadow },
+                    isSubmitting && { backgroundColor: colors.disabled }
+                  ]}
                   onPress={handleSubmit}
                   disabled={isSubmitting}
                 >
                   {isSubmitting ? (
-                    <ActivityIndicator color="white" size="small" />
+                    <ActivityIndicator color={colors.headerText} size="small" />
                   ) : (
                     <>
                       <Ionicons
                         name={adType === 'sell' ? "pricetag-outline" : "search-outline"}
                         size={22}
-                        color="white"
+                        color={colors.headerText}
                         style={styles.buttonIcon}
                       />
-                      <Text style={styles.submitButtonText}>
+                      <Text style={[styles.submitButtonText, { color: colors.headerText }]}>
                         {adType === 'sell' ? t('placeAd') : t('Post Want to Buy')}
                       </Text>
                     </>
@@ -660,10 +675,8 @@ const PlaceAdScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F0F2F5',
   },
   header: {
-    backgroundColor: '#104d59',
     paddingTop: Platform.OS === 'ios' ? 50 : 20,
     paddingBottom: 15,
     paddingHorizontal: 20,
@@ -672,16 +685,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 30,
     fontWeight: 'bold',
-    color: '#FFFFFF',
   },
   formContainer: {
     marginHorizontal: 15,
     marginTop: 15,
     marginBottom: 40,
-    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 20,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -694,30 +704,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 10,
-    color: '#2C3E50',
     letterSpacing: 0.3,
   },
   input: {
-    backgroundColor: '#F8FAFC',
     borderRadius: 12,
     padding: 15,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     fontSize: 16,
-    color: '#2C3E50',
   },
   textArea: {
     height: 120,
     textAlignVertical: 'top',
   },
   imagePickerButton: {
-    backgroundColor: '#ff794e',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
     borderRadius: 25, // More rounded corners
-    shadowColor: '#ff794e',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -726,7 +730,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   imagePickerText: {
-    color: 'white',
     fontSize: 16,
     fontWeight: '700',
     marginLeft: 12,
@@ -768,7 +771,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 5,
     left: 5,
-    backgroundColor: '#ff794e',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -781,36 +783,30 @@ const styles = StyleSheet.create({
   addMoreImagesButton: {
     width: '31%', // Match the image preview width
     aspectRatio: 1,
-    backgroundColor: '#f5f5f5',
     borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ddd',
     borderStyle: 'dashed',
   },
   addMoreImagesText: {
-    color: '#666',
     fontSize: 12,
     marginTop: 8,
     textAlign: 'center',
   },
   submitButton: {
-    backgroundColor: '#ff794e',
     padding: 18,
     borderRadius: 25, // Match imagePickerButton radius
     alignItems: 'center',
     marginTop: 20,
     flexDirection: 'row',
     justifyContent: 'center',
-    shadowColor: '#ff794e',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
   },
   submitButtonText: {
-    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
     letterSpacing: 0.5,
@@ -819,28 +815,24 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   disabledButton: {
-    backgroundColor: '#ffccbc', // Lighter shade of primary color
+    // Lighter shade of primary color - will be applied inline
   },
   priceInput: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     overflow: 'hidden',
   },
   currencySymbol: {
     paddingHorizontal: 15,
     fontSize: 18,
-    color: '#ff794e',
     fontWeight: '600',
   },
   priceTextInput: {
     flex: 1,
     padding: 15,
     fontSize: 16,
-    color: '#2C3E50',
   },
   // Add these new styles for enhanced image picker
   imagePickerButtonInner: {
@@ -871,24 +863,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
     padding: 12,
     borderRadius: 25,
     gap: 8,
+    borderWidth: 1,
   },
   adTypeButtonActive: {
-    backgroundColor: '#ff794e',
   },
   adTypeText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#104d59',
   },
   adTypeTextActive: {
-    color: '#fff',
   },
    errorText: {
-    color: '#ff3b30',
     fontSize: 12,
     marginTop: 5,
     marginLeft: 5,
@@ -901,14 +889,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 6,
     left: 6,
-    backgroundColor: '#ff794e',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
     zIndex: 2,
   },
   mainImageText: {
-    color: '#fff',
     fontSize: 10,
     fontWeight: '600',
   },
@@ -917,14 +903,11 @@ const styles = StyleSheet.create({
     height: (width - 80) / 3,
     borderRadius: 12,
     borderWidth: 2,
-    borderColor: '#ff794e',
     borderStyle: 'dashed',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
   },
   addMoreImagesText: {
-    color: '#ff794e',
     fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
@@ -932,33 +915,27 @@ const styles = StyleSheet.create({
   subLabel: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#64748B',
     marginBottom: 8,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
   },
   signInPrompt: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
     padding: 20,
   },
   signInPromptContent: {
     alignItems: 'center',
-    backgroundColor: '#fff',
     padding: 30,
     borderRadius: 15,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -969,31 +946,26 @@ const styles = StyleSheet.create({
   signInPromptTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
     marginTop: 20,
     marginBottom: 10,
   },
   signInPromptText: {
     fontSize: 16,
-    color: '#666',
     textAlign: 'center',
     marginBottom: 30,
     lineHeight: 24,
   },
   signInPromptButton: {
-    backgroundColor: '#ff5722',
     paddingHorizontal: 30,
     paddingVertical: 15,
     borderRadius: 25,
     marginBottom: 15,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
   },
   signInPromptButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -1002,7 +974,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   backButtonText: {
-    color: '#666',
     fontSize: 16,
   },
 });

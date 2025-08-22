@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { UnreadContext } from '../../context/UnreadContext';
+import { useTheme } from '../../context/ThemeContext';
 import {
   getConversations as getConversationsService,
   getTotalUnreadConversations,
@@ -77,7 +78,7 @@ const formatMessageTime = (dateString) => {
     
     // If message is from yesterday
     if (date.toDateString() === yesterday.toDateString()) {
-      return 'Yesterday';
+      return t('yesterday');
     }
     
     // If message is from this year
@@ -104,6 +105,8 @@ const ConversationsScreen = () => {
   const { t } = useTranslation();
   const navigation = useNavigation();
   const { setTotalUnreadConversations } = useContext(UnreadContext);
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
   
   // State
   const [conversations, setConversations] = useState([]);
@@ -144,17 +147,17 @@ const ConversationsScreen = () => {
       headerShown: true,
       title: t('Messages'),
       headerStyle: {
-        backgroundColor: '#104d59',
+        backgroundColor: colors.headerBackground,
         elevation: 0,
         shadowOpacity: 0,
       },
-      headerTintColor: '#fff',
+      headerTintColor: colors.headerText,
       headerTitleStyle: {
         fontWeight: 'bold',
         fontSize: 20,
       },
     });
-  }, [navigation, t]);
+  }, [navigation, t, colors]);
   
   // Fetch conversations
   const fetchConversations = useCallback(async (showLoading = true) => {
@@ -336,7 +339,8 @@ const ConversationsScreen = () => {
       <TouchableOpacity
         style={[
           styles.conversationItem,
-          item.unreadCount > 0 && styles.unreadConversation
+          { backgroundColor: colors.surface, borderBottomColor: colors.border },
+          item.unreadCount > 0 && { backgroundColor: colors.primary + '10' }
         ]}
         onPress={() => handleConversationPress(item)}
       >
@@ -351,8 +355,8 @@ const ConversationsScreen = () => {
               defaultSource={require('../../assets/default-avatar.png')}
             />
           ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={styles.avatarText}>
+            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surface }]}>
+              <Text style={[styles.avatarText, { color: colors.textSecondary }]}>
                 {username.charAt(0).toUpperCase()}
               </Text>
             </View>
@@ -363,11 +367,12 @@ const ConversationsScreen = () => {
           <View style={styles.conversationHeader}>
             <Text style={[
               styles.username,
-              item.unreadCount > 0 && styles.unreadText
+              { color: colors.text },
+              item.unreadCount > 0 && { color: colors.text, fontWeight: '600' }
             ]} numberOfLines={1}>
               {username}
             </Text>
-            <Text style={styles.timestamp}>
+            <Text style={[styles.timestamp, { color: colors.textSecondary }]}>
               {formatMessageTime(item.last_message_at)}
             </Text>
           </View>
@@ -376,15 +381,16 @@ const ConversationsScreen = () => {
             <Text 
               style={[
                 styles.lastMessage,
-                item.unreadCount > 0 && styles.unreadText
+                { color: colors.textSecondary },
+                item.unreadCount > 0 && { color: colors.text, fontWeight: '600' }
               ]} 
               numberOfLines={1}
             >
-              {isMyMessage ? `You: ${item.last_message}` : item.last_message}
+              {isMyMessage ? `${t('you')}: ${item.last_message}` : item.last_message}
             </Text>
             {item.unreadCount > 0 && (
-              <View style={styles.unreadBadge}>
-                <Text style={styles.unreadCount}>
+              <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
+                <Text style={[styles.unreadCount, { color: colors.headerText }]}>
                   {item.unreadCount}
                 </Text>
               </View>
@@ -393,7 +399,7 @@ const ConversationsScreen = () => {
               <Ionicons 
                 name={isRead === true ? "checkmark-done" : "checkmark"} 
                 size={14} 
-                color={isRead === true ? "#666" : "#999"}
+                color={isRead === true ? colors.primary : colors.textSecondary}
                 style={styles.readStatusIcon} 
               />
             )}
@@ -401,14 +407,14 @@ const ConversationsScreen = () => {
         </View>
       </TouchableOpacity>
     );
-  }, [t, handleConversationPress]);
+  }, [t, handleConversationPress, colors]);
 
   // Show loading while checking authentication
   if (isCheckingAuth) {
     return (
-      <View style={styles.centeredContainer}>
-        <ActivityIndicator size="large" color="#ff5722" />
-        <Text style={styles.loadingText}>
+      <View style={[styles.centeredContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
           {t('checkingAuthentication')}
         </Text>
       </View>
@@ -418,24 +424,24 @@ const ConversationsScreen = () => {
   // Show sign-in prompt if not authenticated
   if (!isAuthenticated) {
     return (
-      <View style={styles.signInPrompt}>
-        <View style={styles.signInPromptContent}>
-          <Ionicons name="chatbubbles-outline" size={80} color="#ff5722" />
-          <Text style={styles.signInPromptTitle}>{t('Authentication Required')}</Text>
-          <Text style={styles.signInPromptText}>
+      <View style={[styles.signInPrompt, { backgroundColor: colors.background }]}>
+        <View style={[styles.signInPromptContent, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+          <Ionicons name="chatbubbles-outline" size={80} color={colors.primary} />
+          <Text style={[styles.signInPromptTitle, { color: colors.text }]}>{t('authenticationRequired')}</Text>
+          <Text style={[styles.signInPromptText, { color: colors.textSecondary }]}>
             {t('signInToAccessMessages')}
           </Text>
           <TouchableOpacity
-            style={styles.signInPromptButton}
+            style={[styles.signInPromptButton, { backgroundColor: colors.primary }]}
             onPress={() => navigation.navigate('Login')}
           >
-            <Text style={styles.signInPromptButtonText}>{t('Sign In')}</Text>
+            <Text style={[styles.signInPromptButtonText, { color: colors.headerText }]}>{t('signIn')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.signUpPromptButton}
+            style={[styles.signUpPromptButton, { backgroundColor: colors.secondary }]}
             onPress={() => navigation.navigate('SignUp')}
           >
-            <Text style={styles.signUpPromptButtonText}>{t('Create Account')}</Text>
+            <Text style={[styles.signUpPromptButtonText, { color: colors.headerText }]}>{t('createAccount')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -448,11 +454,11 @@ const ConversationsScreen = () => {
       loadingMessage={t('loadingConversations')}
       errorMessage={error || t('errorLoadingConversations')}
     >
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         {isLoading && isInitialLoad ? (
-          <View style={styles.centeredContainer}>
-            <ActivityIndicator size="large" color="#ff5722" />
-            <Text style={styles.loadingText}>
+          <View style={[styles.centeredContainer, { backgroundColor: colors.background }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
               {t('loadingConversations')}
             </Text>
           </View>
@@ -469,8 +475,8 @@ const ConversationsScreen = () => {
               <RefreshControl
                 refreshing={isRefreshing}
                 onRefresh={handleRefresh}
-                colors={['#ff5722']}
-                tintColor="#ff5722"
+                colors={[colors.primary]}
+                tintColor={colors.primary}
                 title={t('pullToRefresh')}
               />
             }
@@ -483,26 +489,26 @@ const ConversationsScreen = () => {
                         ? "wifi-outline" 
                         : "alert-circle-outline"} 
                       size={60} 
-                      color="#ff9800" 
+                      color={colors.error} 
                     />
-                    <Text style={styles.emptyTitle}>
+                    <Text style={[styles.emptyTitle, { color: colors.text }]}>
                       {error.includes('internet') || error.includes('connection')
                         ? t('noInternet')
                         : t('errorTitle')}
                     </Text>
-                    <Text style={styles.emptyMessage}>{error}</Text>
+                    <Text style={[styles.emptyMessage, { color: colors.textSecondary }]}>{error}</Text>
                     <TouchableOpacity
-                      style={styles.refreshButton}
+                      style={[styles.refreshButton, { backgroundColor: colors.primary }]}
                       onPress={handleRefresh}
                     >
-                      <Text style={styles.refreshButtonText}>{t('retry')}</Text>
+                      <Text style={[styles.refreshButtonText, { color: colors.headerText }]}>{t('retry')}</Text>
                     </TouchableOpacity>
                   </>
                 ) : (
                   <>
-                    <Ionicons name="chatbubbles-outline" size={60} color="#e0e0e0" />
-                    <Text style={styles.emptyTitle}>{t('noConversations')}</Text>
-                    <Text style={styles.emptyMessage}>
+                    <Ionicons name="chatbubbles-outline" size={60} color={colors.textSecondary} />
+                    <Text style={[styles.emptyTitle, { color: colors.text }]}>{t('noConversations')}</Text>
+                    <Text style={[styles.emptyMessage, { color: colors.textSecondary }]}>
                       {t('startChattingMessage')}
                     </Text>
                   </>
@@ -519,7 +525,6 @@ const ConversationsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
   centeredContainer: {
     flex: 1,
@@ -530,11 +535,9 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#666',
   },
   list: {
     flexGrow: 1,
-    paddingTop: 8,
   },
   emptyList: {
     flex: 1,
@@ -544,15 +547,10 @@ const styles = StyleSheet.create({
   conversationItem: {
     flexDirection: 'row',
     padding: 16,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  unreadConversation: {
-    backgroundColor: '#fff9f7',
   },
   temporaryConversation: {
-    backgroundColor: '#fbfbfb',
+    // This style is not used with theme colors, removing hardcoded color
   },
   avatarContainer: {
     width: 50,
@@ -569,7 +567,6 @@ const styles = StyleSheet.create({
   avatarPlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#e1e1e1',
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 25,
@@ -577,7 +574,6 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#666',
   },
   conversationContent: {
     flex: 1,
@@ -594,13 +590,11 @@ const styles = StyleSheet.create({
   username: {
     fontSize: 18,
     fontWeight: '500',
-    color: '#333',
     flex: 1,
     marginRight: 8,
   },
   timestamp: {
     fontSize: 12,
-    color: '#999',
   },
   messageRow: {
     flexDirection: 'row',
@@ -608,16 +602,10 @@ const styles = StyleSheet.create({
   },
   lastMessage: {
     fontSize: 14,
-    color: '#666',
     flex: 1,
     marginRight: 8,
   },
-  unreadText: {
-    fontWeight: '600',
-    color: '#000',
-  },
   unreadBadge: {
-    backgroundColor: '#ff5722',
     borderRadius: 8,
     minWidth: 16, // Smaller minimum width
     height: 16, // Smaller height
@@ -626,7 +614,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4, // Smaller padding
   },
   unreadCount: {
-    color: '#fff',
     fontSize: 10, // Smaller font size
     fontWeight: 'bold',
     textAlign: 'center',
@@ -640,25 +627,21 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#666',
     marginTop: 16,
     marginBottom: 8,
   },
   emptyMessage: {
     fontSize: 14,
-    color: '#999',
     textAlign: 'center',
     marginHorizontal: 24,
   },
   refreshButton: {
-    backgroundColor: '#ff5722',
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 8,
     marginTop: 16,
   },
   refreshButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -669,15 +652,12 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
     padding: 20,
   },
   signInPromptContent: {
     alignItems: 'center',
-    backgroundColor: '#fff',
     padding: 30,
     borderRadius: 15,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -688,24 +668,20 @@ const styles = StyleSheet.create({
   signInPromptTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
     marginTop: 20,
     marginBottom: 10,
   },
   signInPromptText: {
     fontSize: 16,
-    color: '#666',
     textAlign: 'center',
     marginBottom: 30,
     lineHeight: 24,
   },
   signInPromptButton: {
-    backgroundColor: '#ff5722',
     paddingHorizontal: 30,
     paddingVertical: 15,
     borderRadius: 25,
     marginBottom: 15,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -713,17 +689,14 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   signInPromptButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   signUpPromptButton: {
-    backgroundColor: '#104d59',
     paddingHorizontal: 30,
     paddingVertical: 15,
     borderRadius: 25,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -731,7 +704,6 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   signUpPromptButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',

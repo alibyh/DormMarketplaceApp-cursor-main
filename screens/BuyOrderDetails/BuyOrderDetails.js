@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../context/ThemeContext';
 import { useFocusEffect } from '@react-navigation/native';
 import supabase from '../../services/supabaseConfig';
 import { findOrCreateConversation } from '../../services/messageService';
@@ -35,6 +36,8 @@ const { width, height } = Dimensions.get('window');
 
 const BuyOrderDetails = ({ route, navigation }) => {
   const { t } = useTranslation();
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
   const { productId } = route.params;
   const [order, setOrder] = useState(null);
   const [buyerName, setBuyerName] = useState('Unknown');
@@ -187,7 +190,7 @@ const BuyOrderDetails = ({ route, navigation }) => {
             defaultSource={require('../../assets/default-avatar.png')}
             accessibilityLabel={t('buyerAvatar')}
           />
-          <Text style={styles.headerText}>{buyerName}</Text>
+          <Text style={[styles.headerText, { color: colors.headerText }]}>{buyerName}</Text>
         </View>
       ),
       headerLeft: () => (
@@ -195,18 +198,18 @@ const BuyOrderDetails = ({ route, navigation }) => {
           style={styles.headerButton}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={colors.headerText} />
         </TouchableOpacity>
       ),
       headerStyle: {
-        backgroundColor: '#104d59',
+        backgroundColor: colors.headerBackground,
         elevation: Platform.OS === 'android' ? 2 : 0,
         shadowOpacity: Platform.OS === 'ios' ? 0.3 : 0,
         shadowOffset: Platform.OS === 'ios' ? { width: 0, height: 2 } : undefined,
       },
-      headerTintColor: '#fff',
+      headerTintColor: colors.headerText,
     });
-  }, [navigation, order, buyerName]);
+  }, [navigation, order, buyerName, colors]);
 
   const handleMessage = async () => {
     try {
@@ -255,7 +258,7 @@ const BuyOrderDetails = ({ route, navigation }) => {
           if (supported) {
             return Linking.openURL(phoneUrl);
           }
-          Alert.alert(t('Error'), t('Phone calls not supported on this device'));
+          Alert.alert(t('error'), t('phoneCallsNotSupported'));
         })
         .catch(err => console.error('Error opening phone app:', err));
     }
@@ -324,23 +327,23 @@ const BuyOrderDetails = ({ route, navigation }) => {
       errorMessage={error?.message || t('errorLoadingOrder')}
     >
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#ff5722" />
-          <Text style={styles.loadingText}>{t('loadingOrder')}</Text>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('loadingOrder')}</Text>
         </View>
       ) : error ? (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{t('errorLoadingOrder')}</Text>
+        <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
+          <Text style={[styles.errorText, { color: colors.error }]}>{t('errorLoadingOrder')}</Text>
           <TouchableOpacity 
-            style={styles.retryButton}
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
             onPress={fetchOrderDetails}
           >
-            <Text style={styles.retryButtonText}>{t('retry')}</Text>
+            <Text style={[styles.retryButtonText, { color: colors.headerText }]}>{t('retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView style={styles.container}>
-          <View style={styles.photoCarouselContainer}>
+        <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={[styles.photoCarouselContainer, { backgroundColor: colors.card }]}>
             <FlatList
               data={orderImages}
               horizontal
@@ -378,63 +381,63 @@ const BuyOrderDetails = ({ route, navigation }) => {
               )}
             />
             {orderImages.length > 1 && (
-              <View style={styles.photoCounterContainer}>
-                <Text style={styles.photoCounterText}>
+              <View style={[styles.photoCounterContainer, { backgroundColor: colors.overlay }]}>
+                <Text style={[styles.photoCounterText, { color: colors.headerText }]}>
                   {currentPhotoIndex + 1}/{orderImages.length}
                 </Text>
               </View>
             )}
           </View>
 
-          <View style={styles.detailsContainer}>
-            <View style={styles.orderTypeContainer}>
-              <Text style={styles.orderTypeLabel}>{t('Want to Buy')}</Text>
+          <View style={[styles.detailsContainer, { backgroundColor: colors.card }]}>
+            <View style={[styles.orderTypeContainer, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.orderTypeLabel, { color: colors.headerText }]}>{t('Want to Buy')}</Text>
             </View>
 
-            <Text style={styles.productName}>{order.name}</Text>
+            <Text style={[styles.productName, { color: colors.text }]}>{order.name}</Text>
 
             <View style={styles.buyerInfo}>
-              <Text style={styles.postedBy}>
+              <Text style={[styles.postedBy, { color: colors.textSecondary }]}>
                 {t('Posted by {{name}}', { name: buyerName })}
               </Text>
             </View>
 
-            <View style={styles.locationInfo}>
-              <Ionicons name="location" size={20} color="#666" />
-              <Text style={styles.dormText}>{order.dorm}</Text>
+            <View style={[styles.locationInfo, { backgroundColor: colors.surface }]}>
+              <Ionicons name="location" size={20} color={colors.textSecondary} />
+              <Text style={[styles.dormText, { color: colors.text }]}>{order.dorm}</Text>
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-            <Text style={styles.descriptionTitle}>{t('Looking for')}</Text>
-            <Text style={styles.description}>{order.description}</Text>
+            <Text style={[styles.descriptionTitle, { color: colors.text }]}>{t('lookingFor')}</Text>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>{order.description}</Text>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
-            <Text style={styles.contactTitle}>{t('Contact Options')}</Text>
+            <Text style={[styles.contactTitle, { color: colors.text }]}>{t('Contact Options')}</Text>
             <View style={styles.contactButtonsContainer}>
               <TouchableOpacity
-                style={[styles.contactButton, styles.messageButton]}
+                style={[styles.contactButton, styles.messageButton, { backgroundColor: colors.primary }]}
                 onPress={handleMessage}
                 disabled={isMessaging}
               >
                 {isMessaging ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.headerText} />
                 ) : (
                   <>
-                    <Ionicons name="chatbubble" size={22} color="#fff" />
-                    <Text style={styles.contactButtonText}>{t('Message')}</Text>
+                    <Ionicons name="chatbubble" size={22} color={colors.headerText} />
+                    <Text style={[styles.contactButtonText, { color: colors.headerText }]}>{t('Message')}</Text>
                   </>
                 )}
               </TouchableOpacity>
               
               {allowPhoneContact && phoneNumber && (
                 <TouchableOpacity
-                  style={[styles.contactButton, styles.callButton]}
+                  style={[styles.contactButton, styles.callButton, { backgroundColor: colors.secondary }]}
                   onPress={handlePhoneCall}
                 >
-                  <Ionicons name="call" size={22} color="#fff" />
-                  <Text style={styles.contactButtonText}>{t('Call')}</Text>
+                  <Ionicons name="call" size={22} color={colors.headerText} />
+                  <Text style={[styles.contactButtonText, { color: colors.headerText }]}>{t('Call')}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -449,32 +452,26 @@ const BuyOrderDetails = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
   },
   errorText: {
     fontSize: 16,
-    color: '#ff5722',
   },
   photoCarouselContainer: {
     height: width * 0.85,
     width: width,
     position: 'relative',
-    backgroundColor: '#f0f0f0', // Changed from #104d59 to better show loading state
     borderRadius: 25,
     overflow: 'hidden',
     elevation: 2,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -485,23 +482,19 @@ const styles = StyleSheet.create({
   photoItemContainer: {
     width: width,
     height: width * 0.85,
-    backgroundColor: '#f0f0f0',
     position: 'relative',
   },
   productImage: {
     width: width,
     height: '100%',
-    backgroundColor: '#f0f0f0',
   },
   detailsContainer: {
     padding: 20,
-    backgroundColor: '#fff',
     flex: 1,
   },
   productName: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#1a1a1a',
     marginBottom: 15,
   },
   buyerInfo: {
@@ -509,12 +502,10 @@ const styles = StyleSheet.create({
   },
   postedBy: {
     fontSize: 14,
-    color: '#666',
   },
   locationInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
     padding: 10,
     borderRadius: 8,
     marginBottom: 15,
@@ -522,29 +513,24 @@ const styles = StyleSheet.create({
   dormText: {
     marginLeft: 8,
     fontSize: 15,
-    color: '#444',
     fontWeight: '500',
   },
   divider: {
     height: 1,
-    backgroundColor: '#eee',
     marginVertical: 20,
   },
   descriptionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
     marginBottom: 10,
   },
   description: {
     fontSize: 16,
     lineHeight: 24,
-    color: '#444',
   },
   contactTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
     marginBottom: 15,
   },
   contactButtonsContainer: {
@@ -559,20 +545,16 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 12,
     elevation: 2,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
   },
   messageButton: {
-    backgroundColor: '#4CAF50',
   },
   callButton: {
-    backgroundColor: '#2196F3',
     marginLeft: 10,
   },
   contactButtonText: {
-    color: 'white',
     fontWeight: '600',
     fontSize: 16,
     marginLeft: 8,
@@ -582,7 +564,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   orderTypeContainer: {
-    backgroundColor: '#104d59',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 6,
@@ -590,7 +571,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   orderTypeLabel: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -603,10 +583,8 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#e1e1e1',
   },
   headerText: {
-    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
     marginLeft: 10,
@@ -673,13 +651,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 15,
     right: 15,
-    backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
   photoCounterText: {
-    color: 'white',
     fontSize: 13,
     fontWeight: 'bold',
   },
@@ -687,17 +663,14 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
   },
   retryButton: {
     marginTop: 20,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    backgroundColor: '#ff5722',
     borderRadius: 5,
   },
   retryButtonText: {
-    color: '#fff',
     fontSize: 16,
   },
 });

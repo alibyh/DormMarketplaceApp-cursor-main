@@ -15,18 +15,22 @@ prepare_react_native_project!
 target 'Marsa' do
   use_expo_modules!
 
-  # 🔒 PIN THESE — this is the important part
-  pod 'YandexMobileAds', '7.15.1'
+  # YandexMobileAds pod temporarily removed due to build conflicts
+  # pod 'YandexMobileAds', '7.15.1'
   # pod 'AppMetricaCore',  '5.10.0'
 
-  if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
-    config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"]
-  else
-    config_command = ['npx','expo-modules-autolinking','react-native-config','--json','--platform','ios']
-  end
+  # Podfile (inside target before use_native_modules!)
+ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] = '1'
 
-  config = use_native_modules!(config_command)
+if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
+  config_command = ['node', '-e', "process.argv=['', '', 'config'];require('@react-native-community/cli').run()"]
+else
+  config_command = ['npx','expo-modules-autolinking','react-native','--json','--platform','ios']
+end
 
+config = use_native_modules!(config_command)
+ 
+  
   use_frameworks! if podfile_properties['ios.useFrameworks'] == 'static' || podfile_properties['ios.useFrameworks'] == 'dynamic'
   use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']
 

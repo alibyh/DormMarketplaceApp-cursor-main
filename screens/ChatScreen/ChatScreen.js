@@ -16,6 +16,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useNavigation } from '@react-navigation/native';
+import { useTheme } from '../../context/ThemeContext';
 import { format } from 'date-fns';
 import supabase from '../../services/supabaseConfig';
 import { 
@@ -42,6 +43,8 @@ const ChatScreen = ({ route }) => {
   const { conversationId: initialConversationId, otherUserId, otherUserName } = route.params || {};
   const navigation = useNavigation();
   const { t } = useTranslation();
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -70,7 +73,7 @@ const ChatScreen = ({ route }) => {
             style={styles.headerButton} 
             onPress={() => navigation.goBack()}
           >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="arrow-back" size={24} color={colors.headerText} />
           </TouchableOpacity>
           <View style={styles.headerContent}>
             <View style={styles.headerAvatarWrapper}>
@@ -84,27 +87,27 @@ const ChatScreen = ({ route }) => {
                   defaultSource={require('../../assets/default-avatar.png')}
                 />
               ) : (
-                <View style={styles.headerAvatarPlaceholder}>
-                  <Text style={styles.headerAvatarText}>
+                <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.surface }]}>
+                  <Text style={[styles.headerAvatarText, { color: colors.textSecondary }]}>
                     {otherUserProfile?.username?.[0]?.toUpperCase() || '?'}
                   </Text>
                 </View>
               )}
             </View>
-            <Text style={styles.headerTitle} numberOfLines={1}>
+            <Text style={[styles.headerTitle, { color: colors.headerText }]} numberOfLines={1}>
               {otherUserProfile?.username || t('Chat')}
             </Text>
           </View>
         </View>
       ),
       headerStyle: {
-        backgroundColor: '#104d59',
+        backgroundColor: colors.headerBackground,
         elevation: 2,
         shadowOpacity: 0.3,
         shadowOffset: { width: 0, height: 2 },
       },
     });
-  }, [navigation, otherUserProfile, t]);
+  }, [navigation, otherUserProfile, t, colors]);
 
   // Get current user ID
   useEffect(() => {
@@ -455,11 +458,11 @@ const ChatScreen = ({ route }) => {
             triggerConversationsRefresh();
           }}
         >
-          <Ionicons name="refresh" size={24} color="#fff" />
+          <Ionicons name="refresh" size={24} color={colors.headerText} />
         </TouchableOpacity>
       )
     });
-  }, [navigation, fetchMessages]);
+  }, [navigation, fetchMessages, colors]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -506,17 +509,17 @@ const ChatScreen = ({ route }) => {
       ]}>
         <View style={[
           styles.messageBubble,
-          isCurrentUser ? styles.currentUserBubble : styles.otherUserBubble,
+          isCurrentUser ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border },
         ]}>
           <Text style={[
             styles.messageText,
-            isCurrentUser ? styles.currentUserText : styles.otherUserText
+            { color: isCurrentUser ? colors.headerText : colors.text }
           ]}>
             {item.content}
           </Text>
           
           <View style={styles.messageFooter}>
-            <Text style={styles.messageTime}>
+            <Text style={[styles.messageTime, { color: colors.textSecondary }]}>
               {formatMessageTime(item.created_at)}
             </Text>
             
@@ -524,7 +527,7 @@ const ChatScreen = ({ route }) => {
               <Ionicons 
                 name={isRead ? "checkmark-done" : "checkmark"} 
                 size={12} 
-                color={isRead ? "#4FC3F7" : "#999"}
+                color={isRead ? colors.primary : colors.textSecondary}
                 style={styles.readStatusIcon}
               />
             )}
@@ -671,8 +674,8 @@ const ChatScreen = ({ route }) => {
 
   if (!currentUserId) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#ff5722" />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -683,25 +686,25 @@ const ChatScreen = ({ route }) => {
       loadingMessage={t('loadingChat')}
       errorMessage={error?.message || t('errorLoadingChat')}
     >
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['bottom']}>
         <KeyboardAvoidingView
-          style={styles.container}
+          style={[styles.container, { backgroundColor: colors.background }]}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
         >
           {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#ff5722" />
-              <Text style={styles.loadingText}>{t('loadingChat')}</Text>
+            <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('loadingChat')}</Text>
             </View>
           ) : error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{t('errorLoadingChat')}</Text>
+            <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
+              <Text style={[styles.errorText, { color: colors.error }]}>{t('errorLoadingChat')}</Text>
               <TouchableOpacity 
-                style={styles.retryButton}
+                style={[styles.retryButton, { backgroundColor: colors.primary }]}
                 onPress={initializeConversation}
               >
-                <Text style={styles.retryButtonText}>{t('retry')}</Text>
+                <Text style={[styles.retryButtonText, { color: colors.headerText }]}>{t('retry')}</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -718,34 +721,35 @@ const ChatScreen = ({ route }) => {
                   }
                 }}
                 ListEmptyComponent={
-                  <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>{t('No messages yet')}</Text>
-                    <Text style={styles.emptySubtext}>{t('Start the conversation!')}</Text>
+                  <View style={[styles.emptyContainer, { backgroundColor: colors.background }]}>
+                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>{t('No messages yet')}</Text>
+                    <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>{t('Start the conversation!')}</Text>
                   </View>
                 }
               />
 
-              <View style={styles.inputContainer}>
+              <View style={[styles.inputContainer, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: colors.inputBackground, color: colors.text }]}
                   value={inputText}
                   onChangeText={setInputText}
                   placeholder={t('Type a message...')}
-                  placeholderTextColor="#999"
+                  placeholderTextColor={colors.placeholder}
                   multiline
                 />
                 <TouchableOpacity
                   style={[
                     styles.sendButton,
-                    (!inputText.trim() || sending) && styles.sendButtonDisabled
+                    { backgroundColor: colors.primary },
+                    (!inputText.trim() || sending) && { backgroundColor: colors.disabled }
                   ]}
                   onPress={handleSendMessage}
                   disabled={!inputText.trim() || sending}
                 >
                   {sending ? (
-                    <ActivityIndicator size="small" color="#fff" />
+                    <ActivityIndicator size="small" color={colors.headerText} />
                   ) : (
-                    <Ionicons name="send" size={20} color="#fff" />
+                    <Ionicons name="send" size={20} color={colors.headerText} />
                   )}
                 </TouchableOpacity>
               </View>
@@ -760,11 +764,9 @@ const ChatScreen = ({ route }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   headerButton: {
     padding: 8,
@@ -778,7 +780,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 16,
-    color: '#999',
   },
   messagesList: {
     padding: 16,
@@ -807,38 +808,23 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#e0e0e0',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#888',
   },
   messageBubble: {
     padding: 12,
     borderRadius: 18,
     maxWidth: '100%',
-  },
-  currentUserBubble: {
-    backgroundColor: '#ff5722',
     borderBottomRightRadius: 4,
-  },
-  otherUserBubble: {
-    backgroundColor: '#fff',
     borderBottomLeftRadius: 4,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
   },
   messageText: {
     fontSize: 16,
-  },
-  currentUserText: {
-    color: '#fff',
-  },
-  otherUserText: {
-    color: '#333',
   },
   messageFooter: {
     flexDirection: 'row',
@@ -848,7 +834,6 @@ const styles = StyleSheet.create({
   },
   messageTime: {
     fontSize: 11,
-    color: '#999',
     marginRight: 4,
   },
   readStatusContainer: {
@@ -873,26 +858,21 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#888',
     marginTop: 16,
   },
   emptySubtext: {
     fontSize: 14,
-    color: '#999',
     marginTop: 8,
     textAlign: 'center',
   },
   inputContainer: {
     flexDirection: 'row',
     padding: 10,
-    backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
     alignItems: 'center',
   },
   input: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -903,13 +883,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#ff5722',
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 10,
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#ffccbc',
   },
   tempMessage: {
     opacity: 0.7,
@@ -934,7 +910,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     overflow: 'hidden',
     marginRight: 12,
-    backgroundColor: '#e1e1e1',
   },
   headerAvatar: {
     width: '100%',
@@ -942,7 +917,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   headerTitle: {
-    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
     flex: 1,
@@ -956,17 +930,14 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#ff5722',
     marginBottom: 16,
   },
   retryButton: {
-    backgroundColor: '#ff5722',
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 20,
   },
   retryButtonText: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },

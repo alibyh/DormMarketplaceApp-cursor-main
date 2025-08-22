@@ -8,7 +8,6 @@ import com.facebook.react.ReactPackage
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.load
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.soloader.SoLoader
-import com.yandex.mobile.ads.common.MobileAds
 
 class MainApplication : Application(), ReactApplication {
     private val mReactNativeHost = object : DefaultReactNativeHost(this) {
@@ -44,9 +43,6 @@ class MainApplication : Application(), ReactApplication {
             load()
         }
         
-        // Initialize Yandex Mobile Ads SDK
-        MobileAds.initialize(this) {
-            // SDK initialized
-        }
+        // Yandex Mobile Ads SDK initialization temporarily removed due to build conflicts
     }
 }

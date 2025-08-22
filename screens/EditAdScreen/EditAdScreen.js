@@ -14,6 +14,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useTranslation } from 'react-i18next';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../../context/ThemeContext';
 import supabase from '../../services/supabaseConfig';
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import { handleProductError } from '../../utils/productErrorHandler';
@@ -89,6 +90,8 @@ const EditAdScreen = ({ navigation, route }) => {
   const { t } = useTranslation();
   const { product } = route.params;
   const isBuyOrder = product.type === 'buy';
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
   
   // Update the initial mainPhoto state setup
   const [mainPhoto, setMainPhoto] = useState(() => {
@@ -470,14 +473,14 @@ const EditAdScreen = ({ navigation, route }) => {
     const { t } = useTranslation();
     
     return (
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={[styles.backButton, { backgroundColor: colors.surface }]}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons name="arrow-back" size={24} color="#ff5722" />
+          <Ionicons name="arrow-back" size={24} color={colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>{t('editProduct')}</Text>
+        <Text style={[styles.title, { color: colors.primary }]}>{t('editProduct')}</Text>
         <View style={styles.placeholder} />
       </View>
     );
@@ -485,14 +488,14 @@ const EditAdScreen = ({ navigation, route }) => {
 
   return (
     <ErrorBoundaryWrapper>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <Header />
         <ScrollView 
-          style={styles.container}
+          style={[styles.container, { backgroundColor: colors.background }]}
           contentContainerStyle={styles.contentContainer}
         >
           {/* Main Photo Section */}
-          <View style={styles.mainPhotoContainer}>
+          <View style={[styles.mainPhotoContainer, { backgroundColor: colors.surface }]}>
             <ErrorBoundaryWrapper>
               {mainPhoto ? (
                 <>
@@ -511,23 +514,23 @@ const EditAdScreen = ({ navigation, route }) => {
               ) : (
                 <>
                   <View style={styles.mainPhotoPlaceholder}>
-                    <Ionicons name="image-outline" size={50} color="#666" />
-                    <Text style={styles.placeholderText}>{t('mainProductPhoto')}</Text>
+                    <Ionicons name="image-outline" size={50} color={colors.textSecondary} />
+                    <Text style={[styles.placeholderText, { color: colors.textSecondary }]}>{t('mainProductPhoto')}</Text>
                   </View>
                 </>
               )}
             </ErrorBoundaryWrapper>
             <TouchableOpacity
-              style={styles.updateMainPhotoButton}
+              style={[styles.updateMainPhotoButton, { backgroundColor: colors.primary, shadowColor: colors.shadow }]}
               onPress={pickMainPhoto}
               disabled={isMainPhotoLoading}
             >
               {isMainPhotoLoading ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={colors.headerText} size="small" />
               ) : (
                 <>
-                  <Ionicons name="camera-outline" size={24} color="#fff" />
-                  <Text style={styles.updateMainPhotoText}>
+                  <Ionicons name="camera-outline" size={24} color={colors.headerText} />
+                  <Text style={[styles.updateMainPhotoText, { color: colors.headerText }]}>
                     {mainPhoto ? t('changeMainPhoto') : t('addMainPhoto')}
                   </Text>
                 </>
@@ -536,47 +539,47 @@ const EditAdScreen = ({ navigation, route }) => {
           </View>
 
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
             value={name}
             onChangeText={setName}
             placeholder={t('productName')}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.placeholder}
           />
 
           {!isBuyOrder && (
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
               value={price}
               onChangeText={setPrice}
               placeholder={t('price')}
               keyboardType="decimal-pad"
-              placeholderTextColor="#999"
+              placeholderTextColor={colors.placeholder}
             />
           )}
 
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
             value={dorm}
             onChangeText={setDorm}
             placeholder={t('dorm')}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.placeholder}
           />
 
           <TextInput
-            style={[styles.input, styles.multilineInput]}
+            style={[styles.input, styles.multilineInput, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
             value={description}
             onChangeText={setDescription}
             placeholder={t('description')}
             multiline
             numberOfLines={4}
-            placeholderTextColor="#999"
+            placeholderTextColor={colors.placeholder}
           />
 
           <TouchableOpacity 
-            style={styles.imagePickerButton} 
+            style={[styles.imagePickerButton, { backgroundColor: colors.primary }]} 
             onPress={pickImage}
           >
-            <Text style={styles.imagePickerText}>{t('addAdditionalImages')}</Text>
+            <Text style={[styles.imagePickerText, { color: colors.headerText }]}>{t('addAdditionalImages')}</Text>
           </TouchableOpacity>
 
           <ScrollView 
@@ -591,10 +594,10 @@ const EditAdScreen = ({ navigation, route }) => {
                   style={styles.imagePreview} 
                 />
                 <TouchableOpacity
-                  style={styles.removeImageButton}
+                  style={[styles.removeImageButton, { backgroundColor: colors.card }]}
                   onPress={() => removeImage(index)}
                 >
-                  <Ionicons name="close-circle" size={24} color="#ff3b30" />
+                  <Ionicons name="close-circle" size={24} color={colors.error} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -607,27 +610,29 @@ const EditAdScreen = ({ navigation, route }) => {
             style={[
               styles.button,
               styles.cancelButton,
-              isSubmitting && styles.disabledButton
+              { backgroundColor: colors.card, borderColor: colors.primary },
+              isSubmitting && { opacity: 0.5 }
             ]}
             onPress={() => navigation.goBack()}
             disabled={isSubmitting}
           >
-            <Text style={styles.cancelButtonText}>{t('cancel')}</Text>
+            <Text style={[styles.cancelButtonText, { color: colors.primary }]}>{t('cancel')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
             style={[
               styles.button,
               styles.updateButton,
-              (isSubmitting || !mainPhoto) && styles.disabledButton
+              { backgroundColor: colors.primary, shadowColor: colors.shadow },
+              (isSubmitting || !mainPhoto) && { backgroundColor: colors.disabled }
             ]}
             onPress={handleUpdate}
             disabled={isSubmitting || !mainPhoto}
           >
             {isSubmitting ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={colors.headerText} />
             ) : (
-              <Text style={styles.updateButtonText}>{t('updateProduct')}</Text>
+              <Text style={[styles.updateButtonText, { color: colors.headerText }]}>{t('updateProduct')}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -648,7 +653,6 @@ const EditAdScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   contentContainer: {
     padding: 20,
@@ -656,30 +660,25 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#ff5722',
     textAlign: 'center',
   },
   input: {
-    backgroundColor: 'white',
     borderRadius: 10,
     padding: 15,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#ddd',
   },
   multilineInput: {
     height: 100,
     textAlignVertical: 'top',
   },
   imagePickerButton: {
-    backgroundColor: '#ff5722',
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
     marginBottom: 15,
   },
   imagePickerText: {
-    color: '#fff',
     fontWeight: '600',
   },
   imagePreviewContainer: {
@@ -699,31 +698,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -10,
     right: -10,
-    backgroundColor: 'white',
     borderRadius: 12,
   },
   updateButton: {
-    backgroundColor: '#ff5722',
   },
   updateButtonText: {
-    color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
   },
   cancelButton: {
-    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#ff5722',
   },
   cancelButtonText: {
-    color: '#ff5722',
     fontWeight: 'bold',
     fontSize: 16,
   },
   mainPhotoContainer: {
     width: '100%',
     height: 250,
-    backgroundColor: '#f0f0f0',
     borderRadius: 12,
     overflow: 'hidden',
     marginBottom: 20,
@@ -744,19 +736,16 @@ const styles = StyleSheet.create({
     bottom: 20,
     alignSelf: 'center',
     flexDirection: 'row',
-    backgroundColor: '#ff5722',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 25,
     alignItems: 'center',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
   },
   updateMainPhotoText: {
-    color: '#fff',
     marginLeft: 8,
     fontSize: 16,
     fontWeight: '600',
@@ -768,12 +757,10 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     marginBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
   backButton: {
     padding: 8,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
   },
   placeholder: {
     width: 40, // Same as backButton width
@@ -791,7 +778,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
     shadowOffset: {
       width: 0,
       height: 2,
@@ -799,9 +785,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-  },
-  disabledButton: {
-    opacity: 0.5,
   },
 });
 

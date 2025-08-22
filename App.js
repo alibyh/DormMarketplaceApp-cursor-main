@@ -8,6 +8,7 @@ import { View, Text, ActivityIndicator, StyleSheet, Alert, NativeModules } from 
 import { UnreadContext } from './context/UnreadContext';
 import i18n from './i18n';
 import { UnreadProvider } from './context/UnreadContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 // Import the supabase client directly from config file
 import supabase from './services/supabaseConfig';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -53,6 +54,8 @@ const Tab = createBottomTabNavigator();
 function MainTabNavigator() {
   const { t } = useTranslation();
   const { totalUnreadConversations } = useContext(UnreadContext);
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
 
   return (
     <Tab.Navigator
@@ -83,8 +86,12 @@ function MainTabNavigator() {
             </View>
           );
         },
-        tabBarActiveTintColor: '#ff5722',
-        tabBarInactiveTintColor: 'gray',
+        tabBarActiveTintColor: colors.tabBarActive,
+        tabBarInactiveTintColor: colors.tabBarInactive,
+        tabBarStyle: {
+          backgroundColor: colors.tabBarBackground,
+          borderTopColor: colors.border,
+        },
       })}
     >
       <Tab.Screen 
@@ -122,6 +129,100 @@ function MainTabNavigator() {
     </Tab.Navigator>
   );
 }
+
+const ThemedApp = ({ navigationRef }) => {
+  const { getThemeColors } = useTheme();
+  const colors = getThemeColors();
+  
+  return (
+    <View style={[styles.appContainer, { backgroundColor: colors.background }]} testID="app-container">
+      <ErrorBoundary>
+        <UnreadProvider>
+          <I18nextProvider i18n={i18n}>
+            <SafeAreaProvider>
+              <NavigationContainer
+                ref={navigationRef}
+                onError={(error) => {
+                  console.error('[Navigation] Error:', error);
+                  handleAppError(error, 'navigation');
+                }}
+                theme={{
+                  dark: colors.name === 'dark',
+                  colors: {
+                    primary: colors.primary,
+                    background: colors.background,
+                    card: colors.card,
+                    text: colors.text,
+                    border: colors.border,
+                    notification: colors.primary,
+                  },
+                }}
+              >
+                <Stack.Navigator screenOptions={{ headerShown: false }}>
+                  {/* Always show main app stack */}
+                  <Stack.Group>
+                    <Stack.Screen name="Main" component={MainTabNavigator} />
+                    <Stack.Screen 
+                      name="Login" 
+                      component={LoginScreen}
+                      options={{ animationEnabled: true }}
+                    />
+                    <Stack.Screen 
+                      name="SignUp" 
+                      component={SignUpScreen}
+                      options={{ animationEnabled: true }}
+                    />
+                    <Stack.Screen 
+                      name="Chat" 
+                      component={ChatScreen} 
+                      options={({ route }) => ({ 
+                        title: route.params?.otherUserName || 'Chat' 
+                      })} 
+                    />
+                    <Stack.Screen 
+                      name="ProductDetails" 
+                      component={ProductDetailsScreen} 
+                      options={{ title: 'Product Details' }} 
+                    />
+                    <Stack.Screen 
+                      name="BuyOrderDetails" 
+                      component={BuyOrderDetails} 
+                      options={{ 
+                        title: 'Want to Buy Details',
+                        headerStyle: {
+                          backgroundColor: colors.headerBackground,
+                        },
+                        headerTintColor: colors.headerText,
+                        headerTitleStyle: {
+                          fontWeight: 'bold',
+                        },
+                      }} 
+                    />
+                    <Stack.Screen 
+                      name="PlaceAd" 
+                      component={PlaceAdScreen} 
+                      options={{ title: 'Place Ad' }} 
+                    />
+                    <Stack.Screen 
+                      name="EditAd" 
+                      component={EditAdScreen} 
+                      options={{ title: 'Edit Ad' }} 
+                    />
+                    <Stack.Screen 
+                      name="UpdateProfile" 
+                      component={UpdateProfileScreen} 
+                      options={{ title: 'Update Profile' }} 
+                    />
+                  </Stack.Group>
+                </Stack.Navigator>
+              </NavigationContainer>
+            </SafeAreaProvider>
+          </I18nextProvider>
+        </UnreadProvider>
+      </ErrorBoundary>
+    </View>
+  );
+};
 
 const App = () => {
   const navigationRef = useRef();
@@ -259,82 +360,10 @@ const App = () => {
     );
   }
 
-  return (
-    <View style={styles.appContainer} testID="app-container">
-      <ErrorBoundary>
-        <UnreadProvider>
-          <I18nextProvider i18n={i18n}>
-            <SafeAreaProvider>
-              <NavigationContainer
-                ref={navigationRef}
-                onError={(error) => {
-                  console.error('[Navigation] Error:', error);
-                  handleAppError(error, 'navigation');
-                }}
-              >
-                <Stack.Navigator screenOptions={{ headerShown: false }}>
-                  {/* Always show main app stack */}
-                  <Stack.Group>
-                    <Stack.Screen name="Main" component={MainTabNavigator} />
-                    <Stack.Screen 
-                      name="Login" 
-                      component={LoginScreen}
-                      options={{ animationEnabled: true }}
-                    />
-                    <Stack.Screen 
-                      name="SignUp" 
-                      component={SignUpScreen}
-                      options={{ animationEnabled: true }}
-                    />
-                    <Stack.Screen 
-                      name="Chat" 
-                      component={ChatScreen} 
-                      options={({ route }) => ({ 
-                        title: route.params?.otherUserName || 'Chat' 
-                      })} 
-                    />
-                    <Stack.Screen 
-                      name="ProductDetails" 
-                      component={ProductDetailsScreen} 
-                      options={{ title: 'Product Details' }} 
-                    />
-                    <Stack.Screen 
-                      name="BuyOrderDetails" 
-                      component={BuyOrderDetails} 
-                      options={{ 
-                        title: 'Want to Buy Details',
-                        headerStyle: {
-                          backgroundColor: '#104d59',
-                        },
-                        headerTintColor: '#fff',
-                        headerTitleStyle: {
-                          fontWeight: 'bold',
-                        },
-                      }} 
-                    />
-                    <Stack.Screen 
-                      name="PlaceAd" 
-                      component={PlaceAdScreen} 
-                      options={{ title: 'Place Ad' }} 
-                    />
-                    <Stack.Screen 
-                      name="EditAd" 
-                      component={EditAdScreen} 
-                      options={{ title: 'Edit Ad' }} 
-                    />
-                    <Stack.Screen 
-                      name="UpdateProfile" 
-                      component={UpdateProfileScreen} 
-                      options={{ title: 'Update Profile' }} 
-                    />
-                  </Stack.Group>
-                </Stack.Navigator>
-              </NavigationContainer>
-            </SafeAreaProvider>
-          </I18nextProvider>
-        </UnreadProvider>
-      </ErrorBoundary>
-    </View>
+    return (
+    <ThemeProvider>
+      <ThemedApp navigationRef={navigationRef} />
+    </ThemeProvider>
   );
 };
 

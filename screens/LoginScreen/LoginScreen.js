@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; // Add this
 import { useTranslation } from 'react-i18next';
+import { useTheme } from '../../context/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import supabase from '../../services/supabaseConfig';
 import { handleAuthError } from '../../utils/authErrorHandler';
@@ -38,6 +39,8 @@ const checkNetworkConnection = async () => {
 
 const LoginScreen = ({ navigation }) => {
   const { t, i18n } = useTranslation(); // Update to include i18n
+  const { getThemeColors, currentTheme, changeTheme, THEME_TYPES } = useTheme();
+  const colors = getThemeColors();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -70,6 +73,11 @@ const LoginScreen = ({ navigation }) => {
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'ru' : 'en';
     i18n.changeLanguage(newLang);
+  };
+
+  const toggleTheme = () => {
+    const newTheme = currentTheme === THEME_TYPES.LIGHT ? THEME_TYPES.DARK : THEME_TYPES.LIGHT;
+    changeTheme(newTheme);
   };
 
   const validateInputs = () => {
@@ -111,7 +119,7 @@ const LoginScreen = ({ navigation }) => {
         Alert.alert(
           t('No Internet Connection'),
           t('Please check your internet connection and try again.'),
-          [{ text: t('OK') }]
+          [{ text: t('ok') }]
         );
         return;
       }
@@ -128,19 +136,19 @@ const LoginScreen = ({ navigation }) => {
           Alert.alert(
             t('Login Failed'),
             t('Invalid email or password. Please try again.'),
-            [{ text: t('OK') }]
+            [{ text: t('ok') }]
           );
         } else if (error.message?.includes('Network request failed')) {
           Alert.alert(
             t('Connection Error'),
             t('Unable to connect to the server. Please check your internet connection.'),
-            [{ text: t('OK') }]
+            [{ text: t('ok') }]
           );
         } else {
           Alert.alert(
-            t('Error'),
-            t('Unable to login. Please try again later.'),
-            [{ text: t('OK') }]
+            t('error'),
+            t('unableToLogin'),
+            [{ text: t('ok') }]
           );
         }
         return;
@@ -167,13 +175,13 @@ const LoginScreen = ({ navigation }) => {
         Alert.alert(
           t('Connection Error'),
           t('Unable to connect to the server. Please check your internet connection.'),
-          [{ text: t('OK') }]
+          [{ text: t('ok') }]
         );
       } else {
         Alert.alert(
-          t('Error'),
-          t('An unexpected error occurred. Please try again.'),
-          [{ text: t('OK') }]
+          t('error'),
+          t('unexpectedError'),
+          [{ text: t('ok') }]
         );
       }
     } finally {
@@ -187,18 +195,32 @@ const LoginScreen = ({ navigation }) => {
       loadingMessage={t('loggingIn')}
       errorMessage={error || t('loginError')}
     >
-      <SafeAreaView style={styles.container}>
-        <TouchableOpacity 
-          style={styles.languageButton} 
-          onPress={toggleLanguage}
-          accessibilityLabel={t('changeLanguage')}
-        >
-          <Ionicons name="language" size={24} color="#ff5722" />
-        </TouchableOpacity>
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.topButtonsContainer}>
+          <TouchableOpacity 
+            style={[styles.topButton, { backgroundColor: colors.card, shadowColor: colors.shadow }]} 
+            onPress={toggleLanguage}
+            accessibilityLabel={t('changeLanguage')}
+          >
+            <Ionicons name="language" size={24} color={colors.primary} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.topButton, { backgroundColor: colors.card, shadowColor: colors.shadow }]} 
+            onPress={toggleTheme}
+            accessibilityLabel={t('changeTheme')}
+          >
+            <Ionicons 
+              name={currentTheme === THEME_TYPES.LIGHT ? 'moon-outline' : 'sunny-outline'} 
+              size={24} 
+              color={colors.primary} 
+            />
+          </TouchableOpacity>
+        </View>
 
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <KeyboardAvoidingView
-            style={styles.container}
+            style={[styles.container, { backgroundColor: colors.background }]}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
           >
@@ -218,15 +240,16 @@ const LoginScreen = ({ navigation }) => {
                     accessibilityLabel={t('appLogo')}
                   />
                 </View>
-                <Text style={styles.title}>{t('appTitle')}</Text>
+                <Text style={[styles.title, { color: colors.primary }]}>{t('appTitle')}</Text>
 
                 {error ? (
-                  <Text style={styles.errorText}>{error}</Text>
+                  <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
                 ) : null}
 
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
                   placeholder={t('emailPlaceholder')}
+                  placeholderTextColor={colors.placeholder}
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
@@ -236,8 +259,9 @@ const LoginScreen = ({ navigation }) => {
                 />
 
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
                   placeholder={t('passwordPlaceholder')}
+                  placeholderTextColor={colors.placeholder}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
@@ -247,7 +271,11 @@ const LoginScreen = ({ navigation }) => {
                 />
 
                 <TouchableOpacity
-                  style={[styles.loginButton, isLoading && styles.disabledButton]}
+                  style={[
+                    styles.loginButton, 
+                    { backgroundColor: colors.primary, shadowColor: colors.shadow },
+                    isLoading && { backgroundColor: colors.disabled }
+                  ]}
                   onPress={() => {
                     console.log('Login button pressed');
                     handleLogin();
@@ -255,7 +283,7 @@ const LoginScreen = ({ navigation }) => {
                   disabled={isLoading}
                   accessibilityLabel={t(isLoading ? 'loggingInButton' : 'loginButton')}
                 >
-                  <Text style={styles.loginButtonText}>
+                  <Text style={[styles.loginButtonText, { color: colors.headerText }]}>
                     {isLoading ? t('loggingInButton') : t('loginButton')}
                   </Text>
                 </TouchableOpacity>
@@ -265,7 +293,7 @@ const LoginScreen = ({ navigation }) => {
                   disabled={isLoading}
                   accessibilityLabel={t('signUpButton')}
                 >
-                  <Text style={styles.signupText}>
+                  <Text style={[styles.signupText, { color: colors.textSecondary }]}>
                     {t('noAccount')}{t('signUp')}
                   </Text>
                 </TouchableOpacity>
@@ -289,7 +317,6 @@ const LoginScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   innerContainer: {
     flex: 1,
@@ -320,49 +347,39 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 30,
-    color: '#ff5722',
   },
   input: {
-    backgroundColor: 'white',
     paddingHorizontal: 15,
     paddingVertical: 12,
     borderRadius: 10,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#ddd',
     fontSize: 16,
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
   },
   loginButton: {
-    backgroundColor: '#ff5722',
     padding: 15,
     borderRadius: 10,
     alignItems: 'center',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 3,
   },
   disabledButton: {
-    backgroundColor: '#cccccc',
   },
   loginButtonText: {
-    color: 'white',
     fontWeight: 'bold',
     fontSize: 16,
   },
   signupText: {
     textAlign: 'center',
     marginTop: 15,
-    color: '#666',
   },
   errorText: {
-    color: '#ff3b30',
     textAlign: 'center',
     marginBottom: 15,
     fontSize: 14,
@@ -370,15 +387,17 @@ const styles = StyleSheet.create({
   scrollContentWithKeyboard: {
     minHeight: Dimensions.get('window').height * 0.5,
   },
-  languageButton: {
+  topButtonsContainer: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 80 : 20,
     right: 20,
     zIndex: 1000,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  topButton: {
     padding: 15,
     borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
