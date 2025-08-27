@@ -11,7 +11,9 @@ import {
   ActivityIndicator,
   Alert,
   SafeAreaView,
-  Image
+  Image,
+  Modal,
+  Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
@@ -28,19 +30,40 @@ import {
   ERROR_CODES,
   triggerConversationsRefresh,
 } from '../../services/messageService';
+import { blockUser, unblockUser, isUserBlocked as checkIfUserBlocked } from '../../services/blockingService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UnreadContext } from '../../context/UnreadContext';
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import { handleChatError } from '../../utils/chatErrorHandler';
 import { checkNetworkConnection } from '../../utils/networkUtils';
 import { useFocusEffect } from '@react-navigation/native';
+import { EventRegister } from 'react-native-event-listeners';
+
+// Helper function to safely parse read_by field
+const parseReadBy = (readBy) => {
+  if (Array.isArray(readBy)) return readBy;
+  if (typeof readBy === 'string') {
+    try {
+      return JSON.parse(readBy || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+};
 
 // Update the logging utility at the top
 const logEvent = (eventName, data) => {
 };
 
 const ChatScreen = ({ route }) => {
-  const { conversationId: initialConversationId, otherUserId, otherUserName } = route.params || {};
+  const { conversationId: initialConversationId, otherUserId, otherUserName, productInfo: routeProductInfo } = route.params || {};
+  const [productInfo, setProductInfo] = useState(routeProductInfo);
+  
+  // Only log if product info is missing
+  if (!routeProductInfo) {
+
+  }
   const navigation = useNavigation();
   const { t } = useTranslation();
   const { getThemeColors } = useTheme();
@@ -55,6 +78,9 @@ const ChatScreen = ({ route }) => {
   const [error, setError] = useState(null);
   const { refreshUnreadCount } = useContext(UnreadContext);
   const [avatarSource, setAvatarSource] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [isUserBlocked, setIsUserBlocked] = useState(false);
 
   const flatListRef = useRef(null);
   const subscriptionRef = useRef(null);
@@ -62,7 +88,7 @@ const ChatScreen = ({ route }) => {
   // Add a component mount reference to ensure we properly handle the lifecycle
   const isMounted = useRef(true);
 
-  // Update the navigation useEffect with this headerLeft configuration
+  // Update the navigation useEffect with product-centric header
   useEffect(() => {
     navigation.setOptions({
       headerShown: true,
@@ -76,27 +102,37 @@ const ChatScreen = ({ route }) => {
             <Ionicons name="arrow-back" size={24} color={colors.headerText} />
           </TouchableOpacity>
           <View style={styles.headerContent}>
-            <View style={styles.headerAvatarWrapper}>
-              {otherUserProfile?.avatar_url ? (
+            {/* Other User Avatar */}
+            <View style={styles.headerUserAvatarWrapper}>
+              {otherUserProfile?.is_deleted ? (
+                <Image
+                  source={require('../../assets/deleted_user_placeholder.png')}
+                  style={styles.headerUserAvatar}
+                />
+              ) : otherUserProfile?.avatar_url ? (
                 <Image
                   source={{ 
                     uri: getAvatarUrl(otherUserProfile.avatar_url),
                     cache: 'force-cache'
                   }}
-                  style={styles.headerAvatar}
+                  style={styles.headerUserAvatar}
                   defaultSource={require('../../assets/default-avatar.png')}
                 />
               ) : (
-                <View style={[styles.headerAvatarPlaceholder, { backgroundColor: colors.surface }]}>
-                  <Text style={[styles.headerAvatarText, { color: colors.textSecondary }]}>
+                <View style={[styles.headerUserAvatarPlaceholder, { backgroundColor: colors.primary }]}>
+                  <Text style={[styles.headerUserAvatarText, { color: colors.headerText }]}>
                     {otherUserProfile?.username?.[0]?.toUpperCase() || '?'}
                   </Text>
                 </View>
               )}
             </View>
-            <Text style={[styles.headerTitle, { color: colors.headerText }]} numberOfLines={1}>
-              {otherUserProfile?.username || t('Chat')}
-            </Text>
+            
+            {/* Other User Info */}
+            <View style={styles.headerUserInfo}>
+              <Text style={[styles.headerTitle, { color: colors.headerText }]} numberOfLines={1}>
+                {otherUserProfile?.is_deleted ? t('deletedAccount') : (otherUserProfile?.username || t('unknownUser'))}
+              </Text>
+            </View>
           </View>
         </View>
       ),
@@ -107,24 +143,51 @@ const ChatScreen = ({ route }) => {
         shadowOffset: { width: 0, height: 2 },
       },
     });
-  }, [navigation, otherUserProfile, t, colors]);
+  }, [navigation, otherUserProfile, productInfo, currentUser, t, colors]);
 
-  // Get current user ID
+  // Get current user ID and profile
   useEffect(() => {
     const getCurrentUserId = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        setCurrentUserId(data.user.id);
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (data?.user) {
+          setCurrentUserId(data.user.id);
+          
+          // Also fetch the user's profile for avatar
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('username, avatar_url')
+            .eq('id', data.user.id)
+            .single();
+            
+          if (profileData) {
+            setCurrentUser({
+              ...data.user,
+              profile: profileData
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
       }
     };
     
     getCurrentUserId();
   }, []);
 
-  // Fetch other user's profile for avatar
+  // Fetch other user's profile for avatar and check blocking status
   useEffect(() => {
     const fetchOtherUserProfile = async () => {
-      if (!otherUserId) return;
+      // Handle deleted users (otherUserId is null)
+      if (!otherUserId) {
+        setOtherUserProfile({
+          username: t('deletedAccount'),
+          avatar_url: 'deleted_user_placeholder.png',
+          is_deleted: true
+        });
+        setIsUserBlocked(false); // Deleted users can't be blocked
+        return;
+      }
 
       try {
         const { data, error } = await supabase
@@ -135,6 +198,13 @@ const ChatScreen = ({ route }) => {
 
         if (error) {
           console.error('Error fetching other user profile:', error);
+          // If profile not found, treat as deleted user
+          setOtherUserProfile({
+            username: t('deletedAccount'),
+            avatar_url: 'deleted_user_placeholder.png',
+            is_deleted: true
+          });
+          setIsUserBlocked(false);
           return;
         }
 
@@ -143,8 +213,19 @@ const ChatScreen = ({ route }) => {
         if (data?.avatar_url) {
           setAvatarSource({ uri: data.avatar_url });
         }
+
+        // Check if user is blocked
+        const blockedStatus = await checkIfUserBlocked(otherUserId);
+        setIsUserBlocked(blockedStatus);
       } catch (error) {
         console.error('Error in fetchOtherUserProfile:', error);
+        // Treat as deleted user on error
+        setOtherUserProfile({
+          username: t('deletedAccount'),
+          avatar_url: 'deleted_user_placeholder.png',
+          is_deleted: true
+        });
+        setIsUserBlocked(false);
       }
     };
 
@@ -155,7 +236,7 @@ const ChatScreen = ({ route }) => {
   useEffect(() => {
     // Update navigation params when user info changes
     navigation.setParams({
-      otherUserName: otherUserProfile?.username || 'Chat',
+      otherUserName: otherUserProfile?.username || t('chat'),
       otherUserAvatar: getAvatarUrl(otherUserProfile?.avatar_url),
       sellerId: otherUserProfile?.id,
       productId: route.params?.productId // If you have this
@@ -177,9 +258,88 @@ const ChatScreen = ({ route }) => {
     }
   };
 
+  // Fetch product info from conversation
+  const fetchProductInfoFromConversation = useCallback(async (conversationId) => {
+    if (!conversationId) {
+
+      return;
+    }
+    
+    try {
+
+      
+      const { data: conversation, error } = await supabase
+        .from('conversations')
+        .select(`
+          product_id,
+          product_name,
+          product_image,
+          product_type,
+          product_price,
+          product_dorm,
+          product_deleted
+        `)
+        .eq('conversation_id', conversationId)
+        .single();
+      
+      if (error) {
+        console.error('Error fetching conversation product info:', error);
+        return;
+      }
+      
+      if (conversation && conversation.product_id) {
+
+      } else {
+
+      }
+      
+      if (conversation && conversation.product_id) {
+        
+        // Check if product is deleted (handle missing column gracefully)
+        const isProductDeleted = (conversation.product_deleted !== undefined ? conversation.product_deleted : false);
+        
+        // Generate product image URL (only if product is not deleted)
+        let productImageUrl = null;
+        if (!isProductDeleted && conversation.product_image) {
+          if (conversation.product_image.startsWith('http')) {
+            productImageUrl = conversation.product_image.split('?')[0]; // Remove cache params
+          } else {
+            const bucket = conversation.product_type === 'buy_order' ? 'buy-orders-images' : 'product_images';
+            try {
+              const publicUrl = supabase.storage.from(bucket).getPublicUrl(conversation.product_image);
+              productImageUrl = publicUrl?.data?.publicUrl || null;
+            } catch (error) {
+              console.error('Error generating product image URL:', error);
+            }
+          }
+        }
+        
+        const productData = {
+          id: conversation.product_id,
+          name: isProductDeleted ? t('deletedProduct') : (conversation.product_name || t('unknownProduct')),
+          mainImage: productImageUrl,
+          type: conversation.product_type,
+          price: conversation.product_price,
+          dorm: conversation.product_dorm,
+          is_deleted: isProductDeleted
+        };
+        
+
+        setProductInfo(productData);
+      } else {
+
+      }
+    } catch (error) {
+      console.error('Error in fetchProductInfoFromConversation:', error);
+    }
+  }, []);
+
   // Initialize conversation
   const initializeConversation = useCallback(async () => {
-    if (!currentUserId || !otherUserId) return;
+    if (!currentUserId) return;
+    
+    // Allow null otherUserId for deleted users
+    if (!otherUserId && !conversationId) return;
     
     setLoading(true);
     setError(null);
@@ -191,18 +351,16 @@ const ChatScreen = ({ route }) => {
       }
 
       if (conversationId) {
+        // Existing conversation - fetch messages and product info
         await fetchMessages();
-      } else {
-        await cleanupStuckMessages();
-        const conversation = await findOrCreateConversation(otherUserId);
-        
-        if (!conversation) {
-          throw new Error('conversation_create_failed');
+        if (!productInfo) {
+          await fetchProductInfoFromConversation(conversationId);
         }
-
-        setConversationId(conversation.conversation_id);
-        navigation.setParams({ conversationId: conversation.conversation_id });
-        await fetchMessages(conversation.conversation_id);
+      } else {
+        // New conversation - just clean up any stuck messages
+        await cleanupStuckMessages();
+        // Don't create conversation yet - wait for first message
+        setConversationId(null);
       }
     } catch (error) {
       setError(error);
@@ -211,7 +369,7 @@ const ChatScreen = ({ route }) => {
     } finally {
       setLoading(false);
     }
-  }, [currentUserId, otherUserId, conversationId, navigation, fetchMessages, cleanupStuckMessages, t]);
+  }, [currentUserId, otherUserId, conversationId, navigation, fetchMessages, cleanupStuckMessages, t, productInfo, fetchProductInfoFromConversation]);
 
   // Update the useEffect to use the new function
   useEffect(() => {
@@ -220,10 +378,21 @@ const ChatScreen = ({ route }) => {
     }
   }, [currentUserId, initializeConversation]);
 
+  // Fetch product info when conversationId changes
+  useEffect(() => {
+    if (conversationId && !productInfo) {
+
+      fetchProductInfoFromConversation(conversationId);
+    }
+  }, [conversationId, productInfo, fetchProductInfoFromConversation]);
+
   // Function to clean up stuck messages
   const cleanupStuckMessages = async () => {
     try {
-      if (!otherUserId || !currentUserId) return;
+      if (!currentUserId) return;
+      
+      // For deleted users, we don't need to clean up temp messages
+      if (!otherUserId) return;
       
       // Generate the conversation ID
       const potentialConversationId = [currentUserId, otherUserId].sort().join('_');
@@ -265,8 +434,13 @@ const ChatScreen = ({ route }) => {
   const handleSendMessage = useCallback(async () => {
     if (!inputText.trim() || !currentUserId || sending) return;
     
-    if (!conversationId) {
-      handleChatError(new Error('no_conversation'), t, 'INIT_CHAT');
+    // Don't allow sending messages to deleted users
+    if (!otherUserId) {
+      Alert.alert(
+        t('error'),
+        t('cannotSendToDeletedUser'),
+        [{ text: t('ok'), style: 'default' }]
+      );
       return;
     }
     
@@ -274,21 +448,36 @@ const ChatScreen = ({ route }) => {
     const messageText = inputText.trim();
     setInputText('');
     
-    const tempId = `temp-${Date.now()}-${Math.random()}`;
-    const [side1Id, side2Id] = conversationId.split('_');
-    
-    const tempMessage = {
-      id: tempId,
-      conversation_id: conversationId,
-      sender_id: currentUserId,
-      content: messageText,
-      side1_read: currentUserId === side1Id,
-      side2_read: currentUserId === side2Id,
-      created_at: new Date().toISOString(),
-      isTemp: true
-    };
-    
     try {
+      // If no conversation exists yet, create it
+      let targetConversationId = conversationId;
+      
+      if (!targetConversationId) {
+
+        
+        if (!productInfo) {
+          throw new Error('Product info required to create conversation');
+        }
+        
+        const conversation = await findOrCreateConversation(productInfo, otherUserId);
+        targetConversationId = conversation.conversation_id;
+        setConversationId(targetConversationId);
+        navigation.setParams({ conversationId: targetConversationId });
+        
+
+      }
+      
+      const tempId = `temp-${Date.now()}-${Math.random()}`;
+      
+            const tempMessage = {
+        id: tempId,
+        conversation_id: targetConversationId,
+        sender_id: currentUserId,
+        content: messageText,
+        created_at: new Date().toISOString(),
+        isTemp: true
+      };
+      
       const isConnected = await checkNetworkConnection();
       if (!isConnected) {
         throw new Error('network');
@@ -303,7 +492,7 @@ const ChatScreen = ({ route }) => {
       });
 
       // Send the actual message
-      const sentMessage = await sendMessage(conversationId, messageText);
+      const sentMessage = await sendMessage(targetConversationId, messageText);
       
       // Replace temp message with real one
       setMessages(prev => {
@@ -312,25 +501,57 @@ const ChatScreen = ({ route }) => {
         );
         return deduplicateMessages([...withoutTemp, sentMessage]);
       });
-    } catch (error) {
-      setError(error);
-      const errorType = error.message === 'network' ? 'NETWORK' : 'SEND_MESSAGE';
-      handleChatError(error, t, errorType);
-    } finally {
-      setSending(false);
-    }
-  }, [inputText, conversationId, currentUserId, sending, t, deduplicateMessages]);
+      
+      // Trigger conversations refresh after creating new conversation
+      if (!conversationId) {
+        setTimeout(() => {
+          triggerConversationsRefresh();
+        }, 1000);
+      }
+      
+          } catch (error) {
+        if (error.message === 'USER_BLOCKED_YOU') {
+          Alert.alert(
+            t('blockedUserTitle'),
+            t('blockedUserMessage'),
+            [{ text: t('ok'), style: 'default' }]
+          );
+        } else if (error.message === 'YOU_BLOCKED_USER') {
+          Alert.alert(
+            t('blockedUserTitle2'),
+            t('blockedUserMessage2'),
+            [{ text: t('ok'), style: 'default' }]
+          );
+        } else if (error.message === 'BLOCKED_USER') {
+          Alert.alert(
+            t('blockedUserTitle'),
+            t('blockedUserMessage'),
+            [{ text: t('ok'), style: 'default' }]
+          );
+        } else {
+          setError(error);
+          const errorType = error.message === 'network' ? 'NETWORK' : 'SEND_MESSAGE';
+          handleChatError(error, t, errorType);
+        }
+      } finally {
+        setSending(false);
+      }
+  }, [inputText, conversationId, currentUserId, sending, t, deduplicateMessages, productInfo, otherUserId, navigation]);
 
   // Improved message loading function with explicit error handling and limits
   const fetchMessages = useCallback(async (targetConversationId) => {
     const convoId = targetConversationId || conversationId;
   
     if (!convoId || !currentUserId) {
+      // No conversation yet - this is normal for new chats
+      setMessages([]);
       return;
     }
   
     try {
       setLoading(true);
+      
+
   
       // Fetch messages with no limit and proper ordering
       const { data: fetchedMessages, error } = await supabase
@@ -356,16 +577,18 @@ const ChatScreen = ({ route }) => {
         throw error;
       }
       
+
+      
       
       if (isMounted.current) {
         setMessages(fetchedMessages || []);
         
         // Mark messages as read after loading them
         if (fetchedMessages && fetchedMessages.length > 0) {
-          const unreadMessages = fetchedMessages.filter(msg => 
-            msg.sender_id !== currentUserId && 
-            (!msg.read_by || !msg.read_by.includes(currentUserId))
-          );
+          const unreadMessages = fetchedMessages.filter(msg => {
+            const readBy = parseReadBy(msg.read_by);
+            return msg.sender_id !== currentUserId && !readBy.includes(currentUserId);
+          });
           
           if (unreadMessages.length > 0) {
             await markMessagesAsRead(convoId, currentUserId);
@@ -400,10 +623,10 @@ const ChatScreen = ({ route }) => {
       try {
         
         // Find unread messages from the other user
-        const unreadMessages = messages.filter(msg => 
-          msg.sender_id === otherUserId && 
-          (!msg.read_by || !msg.read_by.includes(currentUserId))
-        );
+        const unreadMessages = messages.filter(msg => {
+          const readBy = parseReadBy(msg.read_by);
+          return msg.sender_id === otherUserId && !readBy.includes(currentUserId);
+        });
         
         if (unreadMessages.length === 0) {
           return;
@@ -413,28 +636,33 @@ const ChatScreen = ({ route }) => {
         // Call the original markMessagesAsRead function
         const success = await markMessagesAsRead(conversationId, currentUserId);
         
-        // Update global notification count
-        if (refreshUnreadCount) {
-          await refreshUnreadCount();
+        if (success) {
+          // Update global notification count
+          if (refreshUnreadCount) {
+            await refreshUnreadCount();
+          }
+          
+          // Force refresh conversations list immediately
+          triggerConversationsRefresh();
+          
+          // Emit event to notify ConversationsScreen about read status update
+          EventRegister.emit('MESSAGES_MARKED_AS_READ', { conversationId });
+          
+          // Update local state to reflect read status immediately
+          setMessages(prevMessages => 
+            prevMessages.map(msg => {
+              // Only update messages from the other user that haven't been read
+              const readBy = parseReadBy(msg.read_by);
+              if (msg.sender_id === otherUserId && !readBy.includes(currentUserId)) {
+                return {
+                  ...msg,
+                  read_by: [...(msg.read_by || []), currentUserId]
+                };
+              }
+              return msg;
+            })
+          );
         }
-        
-        // Force refresh conversations list
-        triggerConversationsRefresh();
-        
-        // No need to refresh the message list - just manually update the local state
-        setMessages(prevMessages => 
-          prevMessages.map(msg => {
-            // Only update messages from the other user that haven't been read
-            if (msg.sender_id === otherUserId && 
-                (!msg.read_by || !msg.read_by.includes(currentUserId))) {
-              return {
-                ...msg,
-                read_by: [...(msg.read_by || []), currentUserId]
-              };
-            }
-            return msg;
-          })
-        );
         
       } catch (error) {
         console.error('Error updating read status:', error);
@@ -444,35 +672,224 @@ const ChatScreen = ({ route }) => {
     // Run once when component mounts and messages are loaded
     updateReadStatus();
     
-    // Only run once when mounted - [] dependency array would run on every message change
-  }, [conversationId, currentUserId, otherUserId, messages.length]); 
+  }, [conversationId, currentUserId, otherUserId, messages.length]);
 
-  // Simplify header by just adding a refresh button
+  // Add focus effect to update read status when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const updateReadStatusOnFocus = async () => {
+        if (!conversationId || !currentUserId || !otherUserId || messages.length === 0) {
+          return;
+        }
+
+        try {
+          const unreadMessages = messages.filter(msg => {
+            const readBy = parseReadBy(msg.read_by);
+            return msg.sender_id === otherUserId && !readBy.includes(currentUserId);
+          });
+          
+          if (unreadMessages.length > 0) {
+            const success = await markMessagesAsRead(conversationId, currentUserId);
+            if (success) {
+              // Update global notification count
+              if (refreshUnreadCount) {
+                await refreshUnreadCount();
+              }
+              
+              // Force refresh conversations list
+              triggerConversationsRefresh();
+              
+              // Emit event to notify ConversationsScreen about read status update
+              EventRegister.emit('MESSAGES_MARKED_AS_READ', { conversationId });
+              
+              // Update local message state to reflect read status
+              setMessages(prevMessages => 
+                prevMessages.map(msg => {
+                  const readBy = parseReadBy(msg.read_by);
+                  if (msg.sender_id === otherUserId && !readBy.includes(currentUserId)) {
+                    return {
+                      ...msg,
+                      read_by: [...readBy, currentUserId]
+                    };
+                  }
+                  return msg;
+                })
+              );
+            }
+          }
+        } catch (error) {
+          console.error('Error updating read status on focus:', error);
+        }
+      };
+
+      updateReadStatusOnFocus();
+    }, [conversationId, currentUserId, otherUserId, messages.length, refreshUnreadCount])
+  ); 
+
+  // Add info button to header
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <TouchableOpacity 
-          style={{ marginRight: 15 }}
+        <TouchableOpacity
+          style={{ marginRight: 16 }}
           onPress={() => {
-            fetchMessages();
-            triggerConversationsRefresh();
+            showUserInfoModal();
           }}
         >
-          <Ionicons name="refresh" size={24} color={colors.headerText} />
+          <Ionicons name="information-circle" size={24} color={colors.headerText} />
         </TouchableOpacity>
       )
     });
-  }, [navigation, fetchMessages, colors]);
+  }, [navigation, colors.headerText, otherUserProfile]);
 
-  // Auto-scroll to bottom when new messages arrive
+  // Show user info modal
+  const showUserInfoModal = useCallback(() => {
+    setShowUserModal(true);
+  }, []);
+
+  // Handle report user
+  const handleReportUser = useCallback(async () => {
+    try {
+      const telegramBotURL = 'https://t.me/ushopsfubot';
+      const canOpen = await Linking.canOpenURL(telegramBotURL);
+      
+      if (canOpen) {
+        await Linking.openURL(telegramBotURL);
+      } else {
+        Alert.alert(
+          t('error'),
+          t('unableToOpenLink'),
+          [{ text: t('ok'), style: 'default' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error opening Telegram bot:', error);
+      Alert.alert(
+        t('error'),
+        t('unableToOpenLink'),
+        [{ text: t('ok'), style: 'default' }]
+      );
+    }
+  }, [t]);
+
+  // Handle block user
+  const handleBlockUser = useCallback(async () => {
+    Alert.alert(
+      t('blockUser'),
+      t('blockUserConfirmation'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        { 
+          text: t('block'), 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await blockUser(otherUserId);
+              setIsUserBlocked(true);
+              Alert.alert(t('success'), t('userBlocked'));
+              setShowUserModal(false);
+              // Navigate back to conversations since user is now blocked
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error blocking user:', error);
+              Alert.alert(t('error'), error.message || t('blockUserError'));
+            }
+          }
+        }
+      ]
+    );
+  }, [t, otherUserId, navigation]);
+
+  // Handle unblock user
+  const handleUnblockUser = useCallback(async () => {
+    Alert.alert(
+      t('unblockUser'),
+      t('unblockUserConfirmation'),
+      [
+        { text: t('cancel'), style: 'cancel' },
+        { 
+          text: t('unblock'), 
+          style: 'default',
+          onPress: async () => {
+            try {
+              await unblockUser(otherUserId);
+              setIsUserBlocked(false);
+              Alert.alert(t('success'), t('userUnblocked'));
+              setShowUserModal(false);
+            } catch (error) {
+              console.error('Error unblocking user:', error);
+              Alert.alert(t('error'), error.message || t('unblockUserError'));
+            }
+          }
+        }
+      ]
+    );
+  }, [t, otherUserId]);
+
+  // Test function to manually trigger conversation update
+  const testConversationUpdate = useCallback(() => {
+
+    EventRegister.emit('CONVERSATION_UPDATED', { conversationId });
+  }, [conversationId]);
+
+  // Polling fallback for when real-time fails (disabled to prevent flinching)
+  // useEffect(() => {
+  //   if (!conversationId || !currentUserId) return;
+    
+  //   const pollInterval = setInterval(() => {
+  //     // Only poll if we don't have an active subscription or if it's in error state
+  //     if (!subscriptionRef.current || subscriptionRef.current === 'ERROR') {
+  //       console.log('Polling for new messages (fallback)...');
+  //       fetchMessages();
+  //     }
+  //   }, 3000); // Poll every 3 seconds as fallback
+    
+  //   return () => clearInterval(pollInterval);
+  // }, [conversationId, currentUserId, fetchMessages]);
+
+  // Auto-scroll to bottom when new messages arrive (optimized to prevent flinching)
   useEffect(() => {
     if (flatListRef.current && messages.length > 0) {
-      flatListRef.current.scrollToEnd({ animated: false });
+      // Only scroll if we're near the bottom to prevent flinching
+      setTimeout(() => {
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({ animated: false });
+        }
+      }, 100);
     }
   }, [messages]);
 
+  // Group messages by date
+  const groupMessagesByDate = useCallback((messagesList) => {
+    const grouped = [];
+    let currentDate = null;
+    
+    messagesList.forEach((message) => {
+      const messageDate = new Date(message.created_at).toDateString();
+      
+      if (messageDate !== currentDate) {
+        currentDate = messageDate;
+        grouped.push({
+          type: 'date',
+          date: message.created_at,
+          id: `date-${messageDate}`
+        });
+      }
+      
+      grouped.push({
+        type: 'message',
+        ...message
+      });
+    });
+    
+    return grouped;
+  }, []);
+
   // Better key extraction for FlatList to avoid duplicate key warnings
   const keyExtractor = useCallback((item) => {
+    if (item.type === 'date') {
+      return item.id;
+    }
     // For temporary messages, add a suffix to ensure uniqueness
     if (item.isTemp) {
       return `${item.id}-${item.created_at}`;
@@ -483,23 +900,52 @@ const ChatScreen = ({ route }) => {
   // Format date for message timestamp
   const formatMessageTime = useCallback((dateString) => {
     const date = new Date(dateString);
-    return format(date, 'h:mm a');
+    return format(date, 'HH:mm');
   }, []);
 
-  // Update the renderMessageItem function to be extra clear about read receipts
-  const renderMessageItem = useCallback(({ item }) => {
-    const isCurrentUser = item.sender_id === currentUserId;
+  // Format date for date separator
+  const formatDateSeparator = useCallback((dateString) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
     
-    // Extra debug info for read status
-    if (isCurrentUser) {
-      const isRead = Array.isArray(item.read_by) && item.read_by.includes(otherUserId);
+    if (date.toDateString() === today.toDateString()) {
+      return t('today');
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      return t('yesterday');
+    } else {
+      // Use translated month and day names
+      const monthName = t(`month_${format(date, 'M')}`);
+      const dayName = t(`day_${format(date, 'E')}`);
+      return `${dayName}, ${monthName} ${format(date, 'd')}`;
     }
+  }, [t]);
+
+  // Update the renderMessageItem function to handle both messages and date separators
+  const renderMessageItem = useCallback(({ item }) => {
+    // Render date separator
+    if (item.type === 'date') {
+      return (
+        <View style={styles.dateSeparatorContainer}>
+          <View style={[styles.dateSeparator, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.dateSeparatorText, { color: colors.textSecondary }]}>
+              {formatDateSeparator(item.date)}
+            </Text>
+          </View>
+        </View>
+      );
+    }
+    
+    // Render message
+    const isCurrentUser = item.sender_id === currentUserId;
     
     // Calculate read status correctly using the read_by array
     let isRead = false;
     if (isCurrentUser && item.read_by) {
       // Check if the other user has read the message
-      isRead = Array.isArray(item.read_by) && item.read_by.includes(otherUserId);
+      const readBy = parseReadBy(item.read_by);
+      isRead = readBy.includes(otherUserId);
     }
     
     return (
@@ -509,7 +955,7 @@ const ChatScreen = ({ route }) => {
       ]}>
         <View style={[
           styles.messageBubble,
-          isCurrentUser ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderColor: colors.border },
+          isCurrentUser ? { backgroundColor: colors.primary } : { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border },
         ]}>
           <Text style={[
             styles.messageText,
@@ -527,7 +973,7 @@ const ChatScreen = ({ route }) => {
               <Ionicons 
                 name={isRead ? "checkmark-done" : "checkmark"} 
                 size={12} 
-                color={isRead ? colors.primary : colors.textSecondary}
+                color={isRead ? colors.headerText : colors.headerText}
                 style={styles.readStatusIcon}
               />
             )}
@@ -535,7 +981,69 @@ const ChatScreen = ({ route }) => {
         </View>
       </View>
     );
-  }, [currentUserId, otherUserId, formatMessageTime]);
+  }, [currentUserId, otherUserId, formatMessageTime, formatDateSeparator, colors]);
+
+  // Render product info card when chat is initiated from a product details screen
+  const renderProductInfo = () => {
+    if (!productInfo) return null;
+
+    const isProductDeleted = productInfo.is_deleted;
+
+    return (
+      <View style={[styles.productInfoContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={styles.productInfoHeader}>
+          <Text style={[styles.productInfoTitle, { color: colors.text }]}>
+            {productInfo.type === 'buy_order' ? t('lookingFor') : t('Product')}
+          </Text>
+          <View style={[
+            styles.productTypeTag, 
+            { backgroundColor: productInfo.type === 'buy_order' ? colors.secondary : colors.primary }
+          ]}>
+            <Text style={[styles.productTypeText, { color: colors.headerText }]}>
+              {productInfo.type === 'buy_order' ? t('wantToBuy') : t('forSale')}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.productInfoContent}>
+          {isProductDeleted ? (
+            <Image
+              source={require('../../assets/deleted_product_placeholder.webp')}
+              style={[styles.productInfoImage, { borderColor: colors.border }]}
+              resizeMode="cover"
+            />
+          ) : productInfo.mainImage ? (
+            <Image
+              source={{ uri: productInfo.mainImage }}
+              style={[styles.productInfoImage, { borderColor: colors.border }]}
+              resizeMode="cover"
+            />
+          ) : null}
+          
+          <View style={styles.productInfoDetails}>
+            <Text style={[styles.productInfoName, { color: colors.text }]} numberOfLines={2}>
+              {isProductDeleted ? t('deletedProduct') : productInfo.name}
+            </Text>
+            
+            {productInfo.price && (
+              <Text style={[styles.productInfoPrice, { color: colors.primary }]}>
+                ₽{productInfo.price}
+              </Text>
+            )}
+            
+            <View style={styles.productInfoMeta}>
+              <View style={styles.productInfoMetaItem}>
+                <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                <Text style={[styles.productInfoMetaText, { color: colors.textSecondary }]}>
+                  {productInfo.dorm || t('Location not specified')}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   // Component mount/unmount handling
   useEffect(() => {
@@ -546,11 +1054,16 @@ const ChatScreen = ({ route }) => {
     };
   }, []);
 
-  // Set up real-time subscription for new messages and updates - with stable deps
+  // Set up real-time subscription for new messages and updates
   useEffect(() => {
-    if (!conversationId || !currentUserId || !otherUserId) return;
+    if (!conversationId || !currentUserId) return;
+    
+    // For deleted users, we don't need real-time updates
+    if (!otherUserId) return;
     
     let isActiveSubscription = true;
+    let retryCount = 0;
+    const maxRetries = 3;
     
     // Clean up any existing subscriptions
     if (subscriptionRef.current) {
@@ -558,10 +1071,11 @@ const ChatScreen = ({ route }) => {
       subscriptionRef.current = null;
     }
     
+
     
     // Create a unique channel for this conversation
     const channel = supabase
-      .channel(`chat-${conversationId}-${Date.now()}`)
+      .channel(`chat-${conversationId}`)
       .on(
         'postgres_changes',
         {
@@ -573,6 +1087,7 @@ const ChatScreen = ({ route }) => {
         async (payload) => {
           if (!isActiveSubscription || !isMounted.current) return;
           
+
           
           try {
             // Fetch the complete message with sender profile
@@ -597,11 +1112,14 @@ const ChatScreen = ({ route }) => {
             if (error) throw error;
             
             if (isMounted.current && isActiveSubscription) {
+
+              
               // Seamlessly add the new message to state without causing a visible refresh
               setMessages(prevMessages => {
                 // Check if we already have this message to avoid duplicates
                 const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
                 if (messageExists) {
+
                   return prevMessages;
                 }
                 
@@ -611,21 +1129,34 @@ const ChatScreen = ({ route }) => {
                 );
                 
                 // Add new message and sort
-                return [...filteredMessages, newMessage]
+                const updatedMessages = [...filteredMessages, newMessage]
                   .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                
+
+                return updatedMessages;
               });
               
               // If message is from other user, mark it as read silently
               if (newMessage.sender_id === otherUserId) {
-                // Silently mark as read without causing UI updates
-                setTimeout(() => {
-                  markMessagesAsRead(conversationId, currentUserId)
-                    .then(() => {
-                      // Update the conversations list without triggering a full UI refresh
-                      triggerConversationsRefresh();
-                    })
-                    .catch(err => console.error('Error marking message as read:', err));
-                }, 500);
+
+                // Mark as read immediately
+                markMessagesAsRead(conversationId, currentUserId)
+                  .then(() => {
+                    
+                    // Update the conversations list immediately
+                    triggerConversationsRefresh();
+                    
+                    // Also update local message state to show read status
+                    setMessages(prevMessages => 
+                      prevMessages.map(msg => {
+                        const readBy = parseReadBy(msg.read_by);
+                        return msg.sender_id === otherUserId && !readBy.includes(currentUserId)
+                          ? { ...msg, read_by: [...readBy, currentUserId] }
+                          : msg;
+                      })
+                    );
+                  })
+                  .catch(err => console.error('Error marking message as read:', err));
               }
             }
           } catch (error) {
@@ -645,25 +1176,206 @@ const ChatScreen = ({ route }) => {
           if (!isActiveSubscription || !isMounted.current) return;
           
           
-          // Just update the specific message that was changed instead of refreshing all messages
+          
+          // Update the specific message that was changed
           setMessages(prevMessages => 
             prevMessages.map(msg => 
               msg.id === payload.new.id ? { ...msg, ...payload.new } : msg
             )
           );
+          
+          // If this is a read status update, also refresh conversations
+          if (payload.new.read_by && payload.new.sender_id === currentUserId) {
+            triggerConversationsRefresh();
+          }
         }
       )
       .subscribe((status, error) => {
         if (error) {
           console.error('Subscription error:', error);
+          if (retryCount < maxRetries && isActiveSubscription) {
+            retryCount++;
+            
+            setTimeout(() => {
+              if (isActiveSubscription) {
+                // Recreate the subscription
+                const newChannel = supabase
+                  .channel(`chat-${conversationId}-retry-${retryCount}`)
+                  .on(
+                    'postgres_changes',
+                    {
+                      event: 'INSERT',
+                      schema: 'public',
+                      table: 'messages',
+                      filter: `conversation_id=eq.${conversationId}`
+                    },
+                    async (payload) => {
+                      if (!isActiveSubscription || !isMounted.current) return;
+                      // Handle new message (same logic as above)
+                      try {
+                        const { data: newMessage, error } = await supabase
+                          .from('messages')
+                          .select(`
+                            id, 
+                            conversation_id,
+                            sender_id,
+                            content,
+                            read_by,
+                            created_at,
+                            profiles!sender_id (
+                              id,
+                              username,
+                              avatar_url
+                            )
+                          `)
+                          .eq('id', payload.new.id)
+                          .single();
+                          
+                        if (error) throw error;
+                        
+                        if (isMounted.current && isActiveSubscription) {
+                          setMessages(prevMessages => {
+                            const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
+                            if (messageExists) return prevMessages;
+                            
+                            const filteredMessages = prevMessages.filter(msg => 
+                              !(msg.isTemp && msg.content === newMessage.content)
+                            );
+                            
+                            return [...filteredMessages, newMessage]
+                              .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                          });
+                          
+                          if (newMessage.sender_id === otherUserId) {
+                            markMessagesAsRead(conversationId, currentUserId)
+                              .then(() => {
+                                triggerConversationsRefresh();
+                                setMessages(prevMessages => 
+                                  prevMessages.map(msg => 
+                                    msg.sender_id === otherUserId && 
+                                    (!msg.read_by || !msg.read_by.includes(currentUserId))
+                                      ? { ...msg, read_by: [...(msg.read_by || []), currentUserId] }
+                                      : msg
+                                  )
+                                );
+                              })
+                              .catch(err => console.error('Error marking message as read:', err));
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Error handling new message:', error);
+                      }
+                    }
+                  )
+                  .subscribe((status, error) => {
+                    if (error) {
+                      console.error('Retry subscription error:', error);
+                    } else {
+                      
+                      subscriptionRef.current = newChannel;
+                    }
+                  });
+              }
+            }, 1000);
+          }
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Channel error - subscription failed');
+          if (retryCount < maxRetries && isActiveSubscription) {
+            retryCount++;
+            
+            setTimeout(() => {
+              if (isActiveSubscription) {
+                // Recreate the subscription
+                const newChannel = supabase
+                  .channel(`chat-${conversationId}-retry-${retryCount}`)
+                  .on(
+                    'postgres_changes',
+                    {
+                      event: 'INSERT',
+                      schema: 'public',
+                      table: 'messages',
+                      filter: `conversation_id=eq.${conversationId}`
+                    },
+                    async (payload) => {
+                      if (!isActiveSubscription || !isMounted.current) return;
+                      // Handle new message (same logic as above)
+                      try {
+                        const { data: newMessage, error } = await supabase
+                          .from('messages')
+                          .select(`
+                            id, 
+                            conversation_id,
+                            sender_id,
+                            content,
+                            read_by,
+                            created_at,
+                            profiles!sender_id (
+                              id,
+                              username,
+                              avatar_url
+                            )
+                          `)
+                          .eq('id', payload.new.id)
+                          .single();
+                          
+                        if (error) throw error;
+                        
+                        if (isMounted.current && isActiveSubscription) {
+                          setMessages(prevMessages => {
+                            const messageExists = prevMessages.some(msg => msg.id === newMessage.id);
+                            if (messageExists) return prevMessages;
+                            
+                            const filteredMessages = prevMessages.filter(msg => 
+                              !(msg.isTemp && msg.content === newMessage.content)
+                            );
+                            
+                            return [...filteredMessages, newMessage]
+                              .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                          });
+                          
+                          if (newMessage.sender_id === otherUserId) {
+                            markMessagesAsRead(conversationId, currentUserId)
+                              .then(() => {
+                                triggerConversationsRefresh();
+                                setMessages(prevMessages => 
+                                  prevMessages.map(msg => 
+                                    msg.sender_id === otherUserId && 
+                                    (!msg.read_by || !msg.read_by.includes(currentUserId))
+                                      ? { ...msg, read_by: [...(msg.read_by || []), currentUserId] }
+                                      : msg
+                                  )
+                                );
+                              })
+                              .catch(err => console.error('Error marking message as read:', err));
+                          }
+                        }
+                      } catch (error) {
+                        console.error('Error handling new message:', error);
+                      }
+                    }
+                  )
+                  .subscribe((status, error) => {
+                    if (error) {
+                      console.error('Retry subscription error:', error);
+                    } else {
+                      
+                      subscriptionRef.current = newChannel;
+                    }
+                  });
+              }
+            }, 1000);
+          }
         } else {
+          
+          retryCount = 0; // Reset retry count on success
         }
       });
-      
+    
     // Store subscription reference for cleanup
     subscriptionRef.current = channel;
     
     return () => {
+      
       isActiveSubscription = false;
       if (subscriptionRef.current) {
         supabase.removeChannel(subscriptionRef.current);
@@ -709,15 +1421,32 @@ const ChatScreen = ({ route }) => {
             </View>
           ) : (
             <>
+
+              {renderProductInfo()}
               <FlatList
                 ref={flatListRef}
-                data={messages}
+                data={groupMessagesByDate(messages)}
                 keyExtractor={keyExtractor}
                 renderItem={renderMessageItem}
                 contentContainerStyle={styles.messagesList}
                 onContentSizeChange={() => {
+                  // Only scroll if we have messages and the list is near the bottom
                   if (flatListRef.current && messages.length > 0) {
-                    flatListRef.current.scrollToEnd({ animated: false });
+                    setTimeout(() => {
+                      if (flatListRef.current) {
+                        flatListRef.current.scrollToEnd({ animated: false });
+                      }
+                    }, 50);
+                  }
+                }}
+                onLayout={() => {
+                  // Only scroll on initial layout
+                  if (flatListRef.current && messages.length > 0) {
+                    setTimeout(() => {
+                      if (flatListRef.current) {
+                        flatListRef.current.scrollToEnd({ animated: false });
+                      }
+                    }, 100);
                   }
                 }}
                 ListEmptyComponent={
@@ -736,6 +1465,14 @@ const ChatScreen = ({ route }) => {
                   placeholder={t('Type a message...')}
                   placeholderTextColor={colors.placeholder}
                   multiline
+                  onFocus={() => {
+                    // Delay scroll to prevent flinching
+                    setTimeout(() => {
+                      if (flatListRef.current && messages.length > 0) {
+                        flatListRef.current.scrollToEnd({ animated: false });
+                      }
+                    }, 300);
+                  }}
                 />
                 <TouchableOpacity
                   style={[
@@ -756,6 +1493,100 @@ const ChatScreen = ({ route }) => {
             </>
           )}
         </KeyboardAvoidingView>
+
+        {/* User Info Modal */}
+        <Modal
+          visible={showUserModal}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowUserModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>
+                  {t('userInfo')}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowUserModal(false)}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.userInfoContainer}>
+                {/* User Avatar */}
+                <View style={styles.modalUserAvatarContainer}>
+                  {otherUserProfile?.avatar_url ? (
+                    <Image
+                      source={{ 
+                        uri: getAvatarUrl(otherUserProfile.avatar_url),
+                        cache: 'force-cache'
+                      }}
+                      style={styles.modalUserAvatar}
+                      defaultSource={require('../../assets/default-avatar.png')}
+                    />
+                  ) : (
+                    <View style={[styles.modalUserAvatarPlaceholder, { backgroundColor: colors.primary }]}>
+                      <Text style={[styles.modalUserAvatarText, { color: colors.headerText }]}>
+                        {otherUserProfile?.username?.[0]?.toUpperCase() || '?'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* User Details */}
+                <View style={styles.userDetailsContainer}>
+                  <Text style={[styles.userName, { color: colors.text }]}>
+                    {otherUserProfile?.username || t('Unknown User')}
+                  </Text>
+                  <View style={styles.userDetailRow}>
+                    <Ionicons name="location-outline" size={16} color={colors.textSecondary} />
+                    <Text style={[styles.userDetailText, { color: colors.textSecondary }]}>
+                      {otherUserProfile?.dorm || t('Location not specified')}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.actionButton, { backgroundColor: colors.secondary }]}
+                  onPress={handleReportUser}
+                >
+                  <Ionicons name="flag-outline" size={20} color={colors.headerText} />
+                  <Text style={[styles.actionButtonText, { color: colors.headerText }]}>
+                    {t('reportUser')}
+                  </Text>
+                </TouchableOpacity>
+
+                {isUserBlocked ? (
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: colors.primary }]}
+                    onPress={handleUnblockUser}
+                  >
+                    <Ionicons name="checkmark-circle-outline" size={20} color={colors.headerText} />
+                    <Text style={[styles.actionButtonText, { color: colors.headerText }]}>
+                      {t('unblockUser')}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.actionButton, { backgroundColor: colors.error }]}
+                    onPress={handleBlockUser}
+                  >
+                    <Ionicons name="ban-outline" size={20} color={colors.headerText} />
+                    <Text style={[styles.actionButtonText, { color: colors.headerText }]}>
+                      {t('blockUser')}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </ErrorBoundaryWrapper>
   );
@@ -786,8 +1617,8 @@ const styles = StyleSheet.create({
   },
   messageContainer: {
     flexDirection: 'row',
-    marginBottom: 12,
-    maxWidth: '80%',
+    marginBottom: 16,
+    maxWidth: '85%',
   },
   currentUserContainer: {
     alignSelf: 'flex-end',
@@ -816,25 +1647,28 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   messageBubble: {
-    padding: 12,
-    borderRadius: 18,
+    padding: 14,
+    borderRadius: 20,
     maxWidth: '100%',
-    borderBottomRightRadius: 4,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   messageText: {
     fontSize: 16,
+    lineHeight: 22,
   },
   messageFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginTop: 2,
+    marginTop: 4,
+    gap: 4,
   },
   messageTime: {
-    fontSize: 11,
-    marginRight: 4,
+    fontSize: 12,
+    opacity: 0.8,
   },
   readStatusContainer: {
     width: 15,
@@ -846,7 +1680,24 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   readStatusIcon: {
-    marginLeft: 2,
+    marginLeft: 0,
+  },
+  dateSeparatorContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  dateSeparator: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  dateSeparatorText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   emptyContainer: {
     flex: 1,
@@ -867,25 +1718,30 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
-    padding: 10,
+    padding: 12,
     borderTopWidth: 1,
     alignItems: 'center',
+    gap: 8,
   },
   input: {
     flex: 1,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     maxHeight: 100,
     fontSize: 16,
+    borderWidth: 1,
   },
   sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 10,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   tempMessage: {
     opacity: 0.7,
@@ -904,22 +1760,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  headerAvatarWrapper: {
+  // User Avatar in Header
+  headerUserAvatarWrapper: {
     width: 40,
     height: 40,
     borderRadius: 20,
     overflow: 'hidden',
     marginRight: 12,
   },
-  headerAvatar: {
+  headerUserAvatar: {
     width: '100%',
     height: '100%',
     borderRadius: 20,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+  headerUserAvatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  headerUserAvatarText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  // User Info
+  headerUserInfo: {
     flex: 1,
+    marginRight: 8,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   errorContainer: {
     flex: 1,
@@ -940,6 +1814,172 @@ const styles = StyleSheet.create({
   retryButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Product Info Styles
+  productInfoContainer: {
+    margin: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  productInfoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  productInfoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  productTypeTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  productTypeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  productInfoContent: {
+    flexDirection: 'row',
+    padding: 12,
+  },
+  productInfoImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 12,
+    borderWidth: 1,
+  },
+  productInfoDetails: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  productInfoName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  productInfoPrice: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  productInfoDescription: {
+    fontSize: 14,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  productInfoMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  productInfoMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  productInfoMetaText: {
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 20,
+    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  userInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalUserAvatarContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+    marginRight: 16,
+  },
+  modalUserAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+  },
+  modalUserAvatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  modalUserAvatarText: {
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  userDetailsContainer: {
+    flex: 1,
+  },
+  userName: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  userDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  userDetailText: {
+    fontSize: 14,
+    marginLeft: 6,
+  },
+  modalActions: {
+    gap: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

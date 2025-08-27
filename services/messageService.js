@@ -5,6 +5,75 @@ import { recordJwtError, handleMissingSubClaimError } from './authValidator';
 import { EventRegister } from 'react-native-event-listeners';
 import { withErrorHandling, AppError, ErrorTypes } from '../utils/errorHandler';
 import { handleMessageError } from '../utils/messageErrorHandler';
+import { canUsersInteract } from './blockingService';
+
+// Push notification function
+const sendPushNotificationForMessage = async (conversationId, senderId, messageContent) => {
+  try {
+    // Import notification service dynamically to avoid circular dependencies
+    const notificationService = (await import('./notificationService')).default;
+    
+    // Check if notifications are enabled for the recipient
+    const notificationsEnabled = await notificationService.areNotificationsEnabled();
+    if (!notificationsEnabled) {
+      logger.info('Notifications disabled by user preference');
+      return;
+    }
+
+    // Get the other user's ID from the conversation
+    let otherUserId;
+    if (conversationId.startsWith('product_')) {
+      // For product-centric conversations: product_{productId}_{buyerId}_{sellerId}
+      const parts = conversationId.split('_');
+      const buyerId = parts[2];
+      const sellerId = parts[3];
+      otherUserId = senderId === buyerId ? sellerId : buyerId;
+    } else {
+      // Legacy user-to-user conversations: user1_user2
+      const [side1Id, side2Id] = conversationId.split('_');
+      otherUserId = senderId === side1Id ? side2Id : side1Id;
+    }
+
+    // Get sender's profile info
+    const senderProfile = await getProfileBasicInfo(senderId);
+    const senderName = senderProfile?.username || 'Someone';
+
+    // Truncate message content for notification
+    const truncatedMessage = messageContent.length > 50 
+      ? `${messageContent.substring(0, 47)}...` 
+      : messageContent;
+
+    // Call the Supabase Edge Function to send push notification
+    try {
+      const { data, error } = await supabase.functions.invoke('send-push-notification', {
+        body: {
+          targetUserId: otherUserId,
+          title: `New message from ${senderName}`,
+          body: truncatedMessage,
+          data: {
+            type: 'message',
+            conversationId: conversationId,
+            otherUserId: senderId,
+            messageContent: messageContent
+          }
+        }
+      });
+
+      if (error) {
+        logger.error('Error calling push notification function:', error);
+        return;
+      }
+
+      logger.info('Push notification sent successfully:', data);
+    } catch (functionError) {
+      logger.error('Edge function not available or failed:', functionError);
+      // Don't fail the message send if notification fails
+      return;
+    }
+  } catch (error) {
+    logger.error('Error sending push notification:', error);
+  }
+};
 
 // Error codes
 const ERROR_CODES = {
@@ -193,59 +262,210 @@ const generateConversationId = (userId1, userId2) => {
 };
 
 /**
- * Find or create a conversation with another user
- * @param {string} otherUserId - The ID of the other user
+ * Find or create a product-centric conversation
+ * @param {Object} productInfo - Product information including id, name, type, etc.
+ * @param {string} sellerId - The ID of the product seller/owner
  * @returns {Promise<Object>} Conversation object
  */
-export const findOrCreateConversation = async (otherUserId) => {
+export const findOrCreateConversation = async (productInfo, sellerId) => {
   try {
-
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
-    // Create conversation ID by sorting user IDs
-    const conversationId = [user.id, otherUserId].sort().join('_');
+    // Check if users can interact (not blocked)
+    const canInteract = await canUsersInteract(user.id, sellerId);
+    if (!canInteract) {
+      // Check which user blocked which to provide specific error
+      const { data: currentUserBlockedOther } = await supabase
+        .from('blocked_users')
+        .select('id')
+        .eq('blocker_id', user.id)
+        .eq('blocked_id', sellerId)
+        .single();
+      
+      const { data: otherUserBlockedCurrent } = await supabase
+        .from('blocked_users')
+        .select('id')
+        .eq('blocker_id', sellerId)
+        .eq('blocked_id', user.id)
+        .single();
+      
+      if (currentUserBlockedOther) {
+        throw new Error('YOU_BLOCKED_USER');
+      } else if (otherUserBlockedCurrent) {
+        throw new Error('USER_BLOCKED_YOU');
+      } else {
+        throw new Error('BLOCKED_USER');
+      }
+    }
 
-    // Check if conversation exists
-    const { data: existing, error: fetchError } = await supabase
-      .from('conversations')
-      .select('conversation_id')
-      .eq('conversation_id', conversationId)
-      .single();
+    // Always create product-centric conversation ID: product_{productId}_{buyerId}_{sellerId}
+    const conversationId = `product_${productInfo.id}_${user.id}_${sellerId}`;
 
+
+
+    // Check if conversation already exists (try both formats)
+    let existing = null;
+    let fetchError = null;
+    
+    try {
+      // First try product-centric format
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('conversation_id, product_id, product_name, product_image, buyer_id, seller_id')
+        .eq('conversation_id', conversationId)
+        .single();
+      
+      existing = data;
+      fetchError = error;
+      
+      if (data) {
+
+        return existing;
+      }
+    } catch (err) {
+      if (err.code === '42703') {
+        // Product-centric columns don't exist, try legacy format
+
+        
+        const legacyConversationId = [user.id, sellerId].sort().join('_');
+        
+        try {
+          const { data, error } = await supabase
+            .from('conversations')
+            .select('conversation_id')
+            .eq('conversation_id', legacyConversationId)
+            .single();
+          
+          existing = data;
+          fetchError = error;
+          
+          if (data) {
+
+            return { ...data, conversation_id: legacyConversationId };
+          }
+        } catch (legacyErr) {
+          fetchError = legacyErr;
+        }
+      } else {
+        fetchError = err;
+      }
+    }
+
+    // Only throw if it's not a "not found" error
     if (fetchError && fetchError.code !== 'PGRST116') {
       throw fetchError;
     }
 
-    if (existing) {
-      return existing;
+    // Try to create new product-centric conversation
+    try {
+
+      
+      // Clean the mainImage URL if it's a full URL
+      let cleanMainImage = productInfo.mainImage;
+      if (cleanMainImage && cleanMainImage.startsWith('http')) {
+        cleanMainImage = cleanMainImage.split('?')[0];
+      }
+      
+      const { data: newConversation, error: createError } = await supabase
+        .from('conversations')
+        .insert({
+          conversation_id: conversationId,
+          product_id: productInfo.id,
+          product_name: productInfo.name,
+          product_image: cleanMainImage,
+          product_type: productInfo.type || 'product',
+          product_price: productInfo.price || null,
+          product_dorm: productInfo.dorm || null,
+          buyer_id: user.id,
+          seller_id: sellerId,
+          participant_ids: [user.id, sellerId],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        if (createError.code === '23505') {
+          // Duplicate key - conversation already exists, try to fetch it
+
+          const { data: existingConv, error: fetchError } = await supabase
+            .from('conversations')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .single();
+          
+          if (fetchError) {
+            throw fetchError;
+          }
+          
+
+          return existingConv;
+        }
+        
+        if (createError.code === '42703' || createError.code === '23502') {
+          throw createError; // Will be caught by outer catch
+        }
+        throw createError;
+      }
+
+
+      return newConversation;
+      
+    } catch (createErr) {
+      if (createErr.code === '42703' || createErr.code === '23502' || createErr.code === '42501') {
+        // Product-centric structure failed, fall back to legacy
+
+        
+        const legacyConversationId = [user.id, sellerId].sort().join('_');
+        
+        const { data: legacyConversation, error: legacyError } = await supabase
+          .from('conversations')
+          .insert({
+            conversation_id: legacyConversationId,
+            user1_id: user.id,
+            user2_id: sellerId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (legacyError) {
+          if (legacyError.code === '23505') {
+            // Duplicate key - conversation already exists, try to fetch it
+
+            const { data: existingLegacyConv, error: fetchError } = await supabase
+              .from('conversations')
+              .select('*')
+              .eq('conversation_id', legacyConversationId)
+              .single();
+            
+            if (fetchError) {
+              throw fetchError;
+            }
+            
+
+            return existingLegacyConv;
+          }
+          
+          console.error('Legacy conversation creation failed:', legacyError);
+          throw legacyError;
+        }
+        
+
+        return legacyConversation;
+      }
+      throw createErr;
     }
-
-    // Create new conversation
-    const { data: newConversation, error: createError } = await supabase
-      .from('conversations')
-      .insert({
-        conversation_id: conversationId,
-        user1_id: user.id,
-        user2_id: otherUserId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (createError) {
-      console.error('Error creating conversation:', createError);
-      throw createError;
-    }
-
-    return newConversation;
 
   } catch (error) {
     console.error('Failed to create conversation in database', error);
     throw error;
   }
 };
+
 
 /**
  * Cleans up temporary messages for a conversation
@@ -286,6 +506,47 @@ export const sendMessage = async (conversationId, content) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  // Get the other user's ID from the conversation
+  let otherUserId;
+  if (conversationId.startsWith('product_')) {
+    // For product-centric conversations: product_{productId}_{buyerId}_{sellerId}
+    const parts = conversationId.split('_');
+    const buyerId = parts[2];
+    const sellerId = parts[3];
+    otherUserId = user.id === buyerId ? sellerId : buyerId;
+  } else {
+    // Legacy user-to-user conversations: user1_user2
+    const [side1Id, side2Id] = conversationId.split('_');
+    otherUserId = user.id === side1Id ? side2Id : side1Id;
+  }
+
+  // Check if users can interact (not blocked)
+  const canInteract = await canUsersInteract(user.id, otherUserId);
+  if (!canInteract) {
+    // Check which user blocked which to provide specific error
+    const { data: currentUserBlockedOther } = await supabase
+      .from('blocked_users')
+      .select('id')
+      .eq('blocker_id', user.id)
+      .eq('blocked_id', otherUserId)
+      .single();
+    
+    const { data: otherUserBlockedCurrent } = await supabase
+      .from('blocked_users')
+      .select('id')
+      .eq('blocker_id', otherUserId)
+      .eq('blocked_id', user.id)
+      .single();
+    
+    if (currentUserBlockedOther) {
+      throw new Error('YOU_BLOCKED_USER');
+    } else if (otherUserBlockedCurrent) {
+      throw new Error('USER_BLOCKED_YOU');
+    } else {
+      throw new Error('BLOCKED_USER');
+    }
+  }
+
   const { data: message, error } = await supabase
     .from('messages')
     .insert({
@@ -298,16 +559,35 @@ export const sendMessage = async (conversationId, content) => {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error('Error sending message:', error);
+    throw error;
+  }
 
-  // Update conversation's last message
-  await supabase
-    .from('conversations')
-    .update({
-      last_message: content,
-      last_message_at: new Date().toISOString()
-    })
-    .eq('conversation_id', conversationId);
+
+
+  // Update conversation's last message (with error handling for legacy structure)
+  try {
+    await supabase
+      .from('conversations')
+      .update({
+        last_message: content,
+        last_message_at: new Date().toISOString()
+      })
+      .eq('conversation_id', conversationId);
+  } catch (updateError) {
+  }
+
+  // Send push notification to the other user (with delay to ensure token is saved)
+  try {
+    // Add a small delay to ensure the token is properly saved
+    setTimeout(async () => {
+      await sendPushNotificationForMessage(conversationId, user.id, content);
+    }, 1000);
+  } catch (notificationError) {
+    // Don't fail the message send if notification fails
+    logger.error('Failed to send push notification:', notificationError);
+  }
 
   return message;
 };
@@ -319,15 +599,44 @@ export const sendMessage = async (conversationId, content) => {
  */
 const getProfileBasicInfo = async (userId) => {
   try {
+    // If userId is null (deleted user), return deleted user info
+    if (!userId) {
+      return { 
+        id: null, 
+        username: 'Deleted Account', 
+        avatar_url: 'deleted_user_placeholder.png',
+        is_deleted: true 
+      };
+    }
+
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, avatar_url')
+      .select('id, username, avatar_url, user_deleted')
       .eq('id', userId)
       .single();
 
     if (error) {
+      // If profile not found (deleted), return deleted user info
+      if (error.code === 'PGRST116') {
+        return { 
+          id: null, 
+          username: 'Deleted Account', 
+          avatar_url: 'deleted_user_placeholder.png',
+          is_deleted: true 
+        };
+      }
       logger.error('Error fetching profile:', error);
       return { id: userId };
+    }
+
+    // If user is marked as deleted, return deleted user info
+    if (data?.user_deleted) {
+      return { 
+        id: null, 
+        username: 'Deleted Account', 
+        avatar_url: 'deleted_user_placeholder.png',
+        is_deleted: true 
+      };
     }
 
     return data;
@@ -384,13 +693,15 @@ export const getMessages = async (conversationId) => {
         id,
         conversation_id,
         sender_id,
+        sender_deleted,
         content,
         read_by,
         created_at,
         profiles!sender_id (
           id,
           username,
-          avatar_url
+          avatar_url,
+          user_deleted
         )
       `)
       .eq('conversation_id', conversationId)
@@ -401,7 +712,25 @@ export const getMessages = async (conversationId) => {
       return [];
     }
 
-    return messages || [];
+    // Process messages to handle deleted users
+    const processedMessages = (messages || []).map(message => {
+      // If sender is deleted or sender_id is null, mark as deleted
+      if (message.sender_deleted || !message.sender_id || message.profiles?.user_deleted) {
+        return {
+          ...message,
+          sender_id: null,
+          profiles: {
+            id: null,
+            username: 'Deleted Account',
+            avatar_url: 'deleted_user_placeholder.png',
+            is_deleted: true
+          }
+        };
+      }
+      return message;
+    });
+
+    return processedMessages;
   } catch (error) {
     console.error('Error in getMessages:', error);
     return [];
@@ -463,8 +792,11 @@ export const markMessagesAsRead = async (conversationId, userId) => {
     // Immediately trigger conversation update
     try {
       EventRegister.emit('REFRESH_CONVERSATIONS');
+      // Also trigger a more specific update for this conversation
+      EventRegister.emit('CONVERSATION_UPDATED', { conversationId });
+      // Trigger specific read status update
+      EventRegister.emit('MESSAGES_MARKED_AS_READ', { conversationId });
     } catch (err) {
-      console.log('Error triggering refresh:', err);
     }
 
     return true;
@@ -476,9 +808,22 @@ export const markMessagesAsRead = async (conversationId, userId) => {
 };
 
 /**
- * Gets all conversations for the current user
+ * Gets all product-centric conversations for the current user
  * @returns {Promise<Array<Object>>} Array of conversation objects
  */
+// Helper function to safely parse read_by field
+const parseReadBy = (readBy) => {
+  if (Array.isArray(readBy)) return readBy;
+  if (typeof readBy === 'string') {
+    try {
+      return JSON.parse(readBy || '[]');
+    } catch (e) {
+      return [];
+    }
+  }
+  return [];
+};
+
 export const getConversations = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -487,82 +832,322 @@ export const getConversations = async () => {
       return [];
     }
 
-    // Fetch conversations with messages
-    const { data: conversations, error: conversationsError } = await supabase
-      .from('conversations')
-      .select(`
-        conversation_id,
-        user1_id,
-        user2_id,
-        last_message,
-        last_message_at,
-        created_at,
-        updated_at,
-        messages (
-          id,
-          sender_id,
-          content,
-          read_by,
-          created_at
-        )
-      `)
-      .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-      .order('last_message_at', { ascending: false });
+    // Try to fetch conversations with both formats
+    let conversations = null;
+    let conversationsError = null;
+    let useLegacyFormat = false;
+    
+    try {
+      // First try product-centric format
+      const { data: productData, error: productError } = await supabase
+        .from('conversations')
+        .select(`
+          conversation_id,
+          product_id,
+          product_name,
+          product_image,
+          product_type,
+          product_price,
+          product_dorm,
+          product_deleted,
+          buyer_id,
+          seller_id,
+          participant_ids,
+          last_message,
+          last_message_at,
+          created_at,
+          updated_at,
+          messages (
+            id,
+            sender_id,
+            content,
+            read_by,
+            created_at
+          )
+        `)
+        .contains('participant_ids', [user.id])
+        .order('last_message_at', { ascending: false });
+        
+      if (productData && productData.length > 0) {
+        conversations = productData;
+        conversationsError = productError;
+      } else {
+        // No product-centric conversations found, try legacy format
+        useLegacyFormat = true;
+        
+        const { data: legacyData, error: legacyError } = await supabase
+          .from('conversations')
+          .select(`
+            conversation_id,
+            user1_id,
+            user2_id,
+            last_message,
+            last_message_at,
+            created_at,
+            updated_at,
+            messages (
+              id,
+              sender_id,
+              content,
+              read_by,
+              created_at
+            )
+          `)
+          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+          .order('last_message_at', { ascending: false });
+          
+        conversations = legacyData;
+        conversationsError = legacyError;
+
+      }
+    } catch (err) {
+      if (err.code === '42703') {
+        // Product-centric columns don't exist, fall back to legacy
+
+        useLegacyFormat = true;
+        
+        const { data, error } = await supabase
+          .from('conversations')
+          .select(`
+            conversation_id,
+            user1_id,
+            user2_id,
+            last_message,
+            last_message_at,
+            created_at,
+            updated_at,
+            messages (
+              id,
+              sender_id,
+              content,
+              read_by,
+              created_at
+            )
+          `)
+          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+          .order('last_message_at', { ascending: false });
+          
+        conversations = data;
+        conversationsError = error;
+      } else {
+        conversationsError = err;
+      }
+    }
 
     if (conversationsError) {
       console.error('Error fetching conversations:', conversationsError);
       return [];
     }
 
-    // Get profiles for other users
-    const otherUserIds = conversations.map(conv => 
-      conv.user1_id === user.id ? conv.user2_id : conv.user1_id
-    );
+    // Handle conversations based on format
+    if (useLegacyFormat) {
+      // Handle legacy user-to-user structure
+      const otherUserIds = conversations.map(conv => 
+        conv.user1_id === user.id ? conv.user2_id : conv.user1_id
+      );
 
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, username, avatar_url')
-      .in('id', otherUserIds);
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, user_deleted')
+        .in('id', otherUserIds);
 
-    const profileMap = (profiles || []).reduce((map, profile) => {
-      map[profile.id] = profile;
-      return map;
-    }, {});
+      // Handle case where some profiles might be deleted
+      const profileMap = {};
+      if (profiles) {
+        profiles.forEach(profile => {
+          profileMap[profile.id] = profile;
+        });
+      }
+      
+      // For any user IDs not found in profiles (deleted), mark as deleted
+      otherUserIds.forEach(userId => {
+        if (!profileMap[userId]) {
+          profileMap[userId] = {
+            id: userId,
+            username: 'Deleted Account',
+            avatar_url: 'deleted_user_placeholder.png',
+            user_deleted: true
+          };
+        }
+      });
 
-    return conversations.map(conv => {
-      const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
-      const otherUserProfile = profileMap[otherUserId] || {};
-      const messages = conv.messages || [];
+      return conversations.map(conv => {
+        const otherUserId = conv.user1_id === user.id ? conv.user2_id : conv.user1_id;
+        const otherUserProfile = profileMap[otherUserId] || {};
+        const messages = conv.messages || [];
 
-      // Sort messages by date and get the last one (already ordered? just ensure)
-      const sortedMessages = [...messages].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      const lastMsgObj = sortedMessages[0];
+        const sortedMessages = [...messages].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const lastMsgObj = sortedMessages[0];
 
-      // Count unread messages using read_by array
-      const unreadCount = messages.filter(msg => 
-        msg.sender_id !== user.id && 
-        (!msg.read_by || !msg.read_by.includes(user.id))
-      ).length;
+        const unreadCount = messages.filter(msg => {
+          const readBy = parseReadBy(msg.read_by);
+          return msg.sender_id !== user.id && !readBy.includes(user.id);
+        }).length;
 
-      // Determine if last message was sent by current user
-      const isMine = lastMsgObj ? lastMsgObj.sender_id === user.id : false;
-      // Determine if last message sent by current user has been read by other user
-      const lastMessageRead = isMine ? !!(lastMsgObj.read_by && lastMsgObj.read_by.includes(otherUserId)) : false;
+        const isMine = lastMsgObj ? lastMsgObj.sender_id === user.id : false;
+        const lastMessageRead = isMine ? parseReadBy(lastMsgObj.read_by).includes(otherUserId) : false;
 
-      return {
-        conversation_id: conv.conversation_id,
-        last_message: conv.last_message || lastMsgObj?.content || '',
-        last_message_at: conv.last_message_at || conv.created_at,
-        unreadCount,
-        isMine,
-        lastMessageRead,
-        otherUser: {
+        // Handle deleted user
+        const isOtherUserDeleted = otherUserProfile.user_deleted || !otherUserId;
+        const otherUserData = isOtherUserDeleted ? {
+          id: null,
+          username: 'Deleted Account',
+          avatar_url: 'deleted_user_placeholder.png',
+          is_deleted: true
+        } : {
           id: otherUserId,
           username: otherUserProfile.username || 'Unknown User',
           avatar_url: otherUserProfile.avatar_url
+        };
+
+        return {
+          conversation_id: conv.conversation_id,
+          last_message: conv.last_message || lastMsgObj?.content || '',
+          last_message_at: conv.last_message_at || conv.created_at,
+          unreadCount,
+          isMine,
+          lastMessageRead,
+          // Legacy format compatibility
+          otherUser: otherUserData
+        };
+      });
+    } else {
+      // Handle product-centric conversations
+      const allParticipantIds = new Set();
+      conversations.forEach(conv => {
+        if (conv.buyer_id) allParticipantIds.add(conv.buyer_id);
+        if (conv.seller_id) allParticipantIds.add(conv.seller_id);
+      });
+
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, user_deleted')
+        .in('id', Array.from(allParticipantIds));
+
+      // Handle case where some profiles might be deleted
+      const profileMap = {};
+      if (profiles) {
+        profiles.forEach(profile => {
+          profileMap[profile.id] = profile;
+        });
+      }
+      
+      // For any user IDs not found in profiles (deleted), mark as deleted
+      Array.from(allParticipantIds).forEach(userId => {
+        if (!profileMap[userId]) {
+          profileMap[userId] = {
+            id: userId,
+            username: 'Deleted Account',
+            avatar_url: 'deleted_user_placeholder.png',
+            user_deleted: true
+          };
         }
-      };
-    });
+      });
+
+
+
+      return conversations.map(conv => {
+        const messages = conv.messages || [];
+        const otherUserId = conv.buyer_id === user.id ? conv.seller_id : conv.buyer_id;
+        const otherUserProfile = profileMap[otherUserId] || {};
+        const buyerProfile = profileMap[conv.buyer_id] || {};
+        const sellerProfile = profileMap[conv.seller_id] || {};
+
+        // Handle deleted users
+        const isBuyerDeleted = buyerProfile.user_deleted || !conv.buyer_id || conv.buyer_deleted;
+        const isSellerDeleted = sellerProfile.user_deleted || !conv.seller_id || conv.seller_deleted;
+        const isOtherUserDeleted = otherUserProfile.user_deleted || !otherUserId;
+
+        const sortedMessages = [...messages].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        const lastMsgObj = sortedMessages[0];
+
+        const unreadCount = messages.filter(msg => {
+          const readBy = parseReadBy(msg.read_by);
+          return msg.sender_id !== user.id && !readBy.includes(user.id);
+        }).length;
+
+        const isMine = lastMsgObj ? lastMsgObj.sender_id === user.id : false;
+        const lastMessageRead = isMine ? parseReadBy(lastMsgObj.read_by).includes(otherUserId) : false;
+
+        let productImageUrl = null;
+        if (conv.product_image) {
+          if (conv.product_image.startsWith('http')) {
+            // Remove any cache-busting parameters for consistency
+            productImageUrl = conv.product_image.split('?')[0];
+          } else {
+            // Try to get the public URL from the appropriate bucket
+            const bucket = conv.product_type === 'buy_order' ? 'buy-orders-images' : 'product_images';
+            try {
+              const publicUrl = supabase.storage.from(bucket).getPublicUrl(conv.product_image);
+              productImageUrl = publicUrl?.data?.publicUrl || null;
+            } catch (error) {
+              console.error('Error generating product image URL:', error);
+              productImageUrl = null;
+            }
+          }
+        }
+
+        // Check if product is deleted (handle missing column gracefully)
+        let isProductDeleted = (conv.product_deleted !== undefined ? conv.product_deleted : false);
+        
+        // For hard-deleted products, we rely on the product_deleted flag
+        // The deleteProduct function will set product_deleted = true when product is hard deleted
+        
+        
+        const productData = {
+          id: conv.product_id,
+          name: isProductDeleted ? 'Deleted Item' : (conv.product_name || 'Unknown Product'),
+          image: isProductDeleted ? null : productImageUrl,
+          type: conv.product_type,
+          price: conv.product_price,
+          dorm: conv.product_dorm,
+          is_deleted: isProductDeleted
+        };
+        
+
+        
+        return {
+          conversation_id: conv.conversation_id,
+          last_message: conv.last_message || lastMsgObj?.content || '',
+          last_message_at: conv.last_message_at || conv.created_at,
+          unreadCount,
+          isMine,
+          lastMessageRead,
+          product: productData,
+          buyer: isBuyerDeleted ? {
+            id: null,
+            username: 'Deleted Account',
+            avatar_url: 'deleted_user_placeholder.png',
+            is_deleted: true
+          } : {
+            id: conv.buyer_id,
+            username: buyerProfile.username || 'Unknown User',
+            avatar_url: buyerProfile.avatar_url
+          },
+          seller: isSellerDeleted ? {
+            id: null,
+            username: 'Deleted Account',
+            avatar_url: 'deleted_user_placeholder.png',
+            is_deleted: true
+          } : {
+            id: conv.seller_id,
+            username: sellerProfile.username || 'Unknown User',
+            avatar_url: sellerProfile.avatar_url
+          },
+          otherUser: isOtherUserDeleted ? {
+            id: null,
+            username: 'Deleted Account',
+            avatar_url: 'deleted_user_placeholder.png',
+            is_deleted: true
+          } : {
+            id: otherUserId,
+            username: otherUserProfile.username || 'Unknown User',
+            avatar_url: otherUserProfile.avatar_url
+          },
+          userRole: conv.buyer_id === user.id ? 'buyer' : 'seller'
+        };
+      });
+    }
 
   } catch (error) {
     console.error('Error in getConversations:', error);
@@ -729,8 +1314,18 @@ const setupMessageSubscription = (conversationId, callback) => {
  * @returns {Function} Unsubscribe function
  */
 export const subscribeToConversations = (callback) => {
+  let lastRefreshTime = 0;
+  const MIN_REFRESH_INTERVAL = 500; // Minimum 500ms between refreshes for more responsive updates
+  
   const refreshConversations = async () => {
     try {
+      const now = Date.now();
+      if (now - lastRefreshTime < MIN_REFRESH_INTERVAL) {
+        // Skip refresh if too soon
+        return;
+      }
+      lastRefreshTime = now;
+      
       const conversations = await getConversations();
       callback({ type: 'refresh', data: conversations });
     } catch (err) {
@@ -787,8 +1382,8 @@ export const subscribeToConversations = (callback) => {
       )
       .subscribe();
 
-    // Set up periodic refresh with a more frequent interval (5 seconds instead of 30)
-    const intervalId = setInterval(refreshConversations, 5000);
+    // Set up periodic refresh with a less frequent interval (15 seconds instead of 5)
+    const intervalId = setInterval(refreshConversations, 15000);
 
     // Register a global event listener for immediate updates
     const refreshEventListener = EventRegister.addEventListener(
@@ -817,6 +1412,21 @@ export const subscribeToConversations = (callback) => {
  */
 export const triggerConversationsRefresh = () => {
   EventRegister.emit('REFRESH_CONVERSATIONS');
+};
+
+// Add a function to force refresh conversations
+export const forceRefreshConversations = async () => {
+  try {
+    const conversations = await getConversations();
+    EventRegister.emit('REFRESH_CONVERSATIONS', { 
+      timestamp: Date.now(),
+      data: conversations 
+    });
+    return conversations;
+  } catch (error) {
+    console.error('Error in force refresh:', error);
+    throw error;
+  }
 };
 
 /**
@@ -939,7 +1549,6 @@ export const refreshConversations = async (silent = false) => {
     const errorMsg = silent ? 'Background refresh failed' : 'Error refreshing conversations';
     
     if (silent) {
-      console.log(`[MessageService] ${errorMsg}:`, error.message || error);
     } else {
       logError(errorMsg, error);
     }

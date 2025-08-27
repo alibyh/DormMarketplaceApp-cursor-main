@@ -28,6 +28,7 @@ import { handleProductError } from '../../utils/productErrorHandler';
 import { checkNetworkConnection } from '../../utils/networkUtils';
 import { getAvatarUrl } from '../../utils/imageUtils';  // Add this import
 import { useFocusEffect } from '@react-navigation/native';
+import { checkAuthenticationWithFallback } from '../../utils/authUtils';
 
 const { width, height } = Dimensions.get('window');
 
@@ -55,7 +56,7 @@ const forceImageReload = (uri) => {
 // Add this enhanced debugging helper at the top
 const getImageUrlForProductType = (imagePath, productType) => {
   if (!imagePath) {
-    console.log(`No image path provided for ${productType} product`);
+
     return null;
   }
   
@@ -112,9 +113,16 @@ const ProductDetailsScreen = ({ route, navigation }) => {
   // Get current user
   useEffect(() => {
     const getUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        setCurrentUser(data.user);
+      try {
+        const { user, isNetworkError, error } = await checkAuthenticationWithFallback();
+        if (user) {
+          setCurrentUser(user);
+        }
+        // Don't show network errors for user check in product details
+        // Just silently fail and continue without user data
+      } catch (error) {
+        console.log('User check failed:', error);
+        // Continue without user data
       }
     };
     getUser();
@@ -126,6 +134,11 @@ const ProductDetailsScreen = ({ route, navigation }) => {
       setIsLoading(true);
       setError(null);
       
+      // Check network connectivity first
+      const isConnected = await checkNetworkConnection();
+      if (!isConnected) {
+        throw new Error('No internet connection');
+      }
 
       // Direct query to ensure we get fresh data
       const { data: freshProduct, error } = await supabase
@@ -196,7 +209,7 @@ const ProductDetailsScreen = ({ route, navigation }) => {
 
       // If we still have no images, add a placeholder
       if (allPhotos.length === 0) {
-        console.log("No images found, using placeholder");
+
         allPhotos.push({ 
           isPlaceholder: true 
         });
@@ -213,7 +226,17 @@ const ProductDetailsScreen = ({ route, navigation }) => {
 
     } catch (error) {
       console.error('Error fetching product details:', error);
-      setError(error);
+      
+      // Check if it's a network error
+      if (error.message?.includes('network') || 
+          error.message?.includes('No internet connection') ||
+          error.message?.includes('fetch') ||
+          error.message?.includes('timeout') ||
+          error.message?.includes('connection')) {
+        setError(new Error('Network error - please check your connection'));
+      } else {
+        setError(error);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -252,14 +275,7 @@ const ProductDetailsScreen = ({ route, navigation }) => {
           <Ionicons name="arrow-back" size={24} color={colors.headerText} />
         </TouchableOpacity>
       ),
-      headerRight: () => (
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={fetchProductDetails}
-        >
-          <Ionicons name="refresh" size={24} color={colors.headerText} />
-        </TouchableOpacity>
-      ),
+      headerRight: () => null,
       headerStyle: {
         backgroundColor: colors.headerBackground,
         elevation: Platform.OS === 'android' ? 2 : 0,
@@ -292,17 +308,26 @@ const ProductDetailsScreen = ({ route, navigation }) => {
         return;
       }
       
-      // Create or get conversation with the seller
+      // Prepare product info for the chat
       try {
         setIsMessaging(true);
         
-        const conversation = await findOrCreateConversation(product.seller_id);
-        
-        // Navigate to chat
+        const productInfo = {
+          id: product.id,
+          name: product.name,
+          description: product.description,
+          price: product.price,
+          dorm: product.dorm,
+          type: 'product',
+          mainImage: productImages[0]?.url || null,
+          totalImages: productImages.length
+        };
+
+        // Navigate to chat without creating conversation yet
         navigation.navigate('Chat', {
-          conversationId: conversation.conversation_id,
           otherUserId: product.seller_id,
           otherUserName: seller?.username || t('Seller'),
+          productInfo
         });
       } catch (error) {
         if (error.code === ERROR_CODES.UNAUTHORIZED) {
@@ -393,7 +418,7 @@ const ProductDetailsScreen = ({ route, navigation }) => {
             <FlatList
               data={productImages}
               renderItem={({ item, index }) => {
-                console.log(`Rendering image ${index}:`, item.isPlaceholder ? 'placeholder' : item.url.substring(0, 50) + '...');
+
                 
                 return (
                   <TouchableOpacity
@@ -413,10 +438,7 @@ const ProductDetailsScreen = ({ route, navigation }) => {
                       <Image
                         key={`main-image-${Date.now()}-${index}`}
                         source={{ uri: item.url }}
-                        style={[
-                          styles.productImage,
-                          item.isMainPhoto && styles.mainProductImage
-                        ]}
+                        style={styles.productImage}
                         resizeMode="cover"
                         onError={(e) => {
                           console.error(`Image load error:`, e.nativeEvent.error);
@@ -631,7 +653,15 @@ const ProductDetailsScreen = ({ route, navigation }) => {
           </View>
         ) : error ? (
           <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
-            <Text style={[styles.errorText, { color: colors.error }]}>{t('errorLoadingProduct')}</Text>
+            {error.message?.includes('Network error') ? (
+              <>
+                <Ionicons name="wifi-outline" size={80} color={colors.error} />
+                <Text style={[styles.errorText, { color: colors.error }]}>{t('noInternet')}</Text>
+                <Text style={[styles.errorDescription, { color: colors.textSecondary }]}>{t('checkConnection')}</Text>
+              </>
+            ) : (
+              <Text style={[styles.errorText, { color: colors.error }]}>{t('errorLoadingProduct')}</Text>
+            )}
             <TouchableOpacity 
               style={[styles.retryButton, { backgroundColor: colors.primary }]}
               onPress={fetchProductDetails}
@@ -683,6 +713,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     marginTop: 2,
+    
   },
   photoItemContainer: {
     width: width,
@@ -692,6 +723,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 9,
+    overflow: 'hidden',
   },
   productImage: {
     width: '100%',
@@ -897,8 +929,31 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
   },
-  mainProductImage: {
-    borderWidth: 2,
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  errorDescription: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  retryButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

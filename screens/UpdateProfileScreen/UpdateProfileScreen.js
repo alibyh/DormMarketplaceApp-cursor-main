@@ -36,19 +36,20 @@ const UpdateProfileScreen = ({ navigation }) => {
   // In the component, update the state declarations
 const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
-    
     name: '',
-    username: '',
     dormNumber: '',
-    phoneNumber: '',
+    phoneNumber: '+7',
     allowPhoneContact: false,
-    password: ''
+    password: '',
+    confirmPassword: ''
   });
   const [formErrors, setFormErrors] = useState({});
   const [error, setError] = useState(null);
 
   const [profilePhotoPreview, setProfilePhotoPreview] = useState(null);
   const [profilePhotoChanged, setProfilePhotoChanged] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     loadUserData();
@@ -107,11 +108,11 @@ const [isSubmitting, setIsSubmitting] = useState(false);
             
             setFormData({
               name: user.user_metadata.name || '',
-              username: user.user_metadata.username || '',
               dormNumber: user.user_metadata.dorm || '',
-              phoneNumber: user.user_metadata.phone_number || '',
+              phoneNumber: user.user_metadata.phone_number || '+7',
               allowPhoneContact: user.user_metadata.allow_phone_contact || false,
-              password: ''
+              password: '',
+              confirmPassword: ''
             });
             
             // Load avatar from metadata if available
@@ -141,11 +142,11 @@ const [isSubmitting, setIsSubmitting] = useState(false);
           // Map the profile data to our form fields
           setFormData({
             name: profileData.name || '',
-            username: profileData.username || '',
             dormNumber: profileData.dorm || '',
-            phoneNumber: profileData.phone_number || '',
+            phoneNumber: profileData.phone_number || '+7',
             allowPhoneContact: profileData.allow_phone_contact || false,
-            password: ''
+            password: '',
+            confirmPassword: ''
           });
           
           // Load profile photo if available
@@ -176,6 +177,93 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       ...prev,
       [key]: value
     }));
+  };
+
+  // Enhanced validation functions
+  const formatPhoneNumber = (phone) => {
+    // Remove all non-digits except +
+    const cleaned = phone.replace(/[^\d+]/g, '');
+    
+    // Ensure it starts with +7
+    let formatted = cleaned;
+    if (!formatted.startsWith('+7')) {
+      formatted = '+7' + formatted.replace(/^\+/, '');
+    }
+    
+    // Add spaces: +7 XXX XXX XX XX
+    const digits = formatted.replace(/\D/g, '');
+    if (digits.length >= 2) {
+      const countryCode = digits.substring(0, 1);
+      const areaCode = digits.substring(1, 4);
+      const firstPart = digits.substring(4, 7);
+      const secondPart = digits.substring(7, 9);
+      const thirdPart = digits.substring(9, 11);
+      
+      let result = `+${countryCode}`;
+      if (areaCode) result += ` ${areaCode}`;
+      if (firstPart) result += ` ${firstPart}`;
+      if (secondPart) result += ` ${secondPart}`;
+      if (thirdPart) result += ` ${thirdPart}`;
+      
+      return result;
+    }
+    
+    return formatted;
+  };
+
+  const handlePhoneNumberChange = (text) => {
+    const formatted = formatPhoneNumber(text);
+    updateFormData('phoneNumber', formatted);
+    setFormErrors(prev => ({ ...prev, phoneNumber: null }));
+  };
+
+  const handleDormNumberChange = (text) => {
+    // Only allow digits
+    const digitsOnly = text.replace(/\D/g, '');
+    updateFormData('dormNumber', digitsOnly);
+    setFormErrors(prev => ({ ...prev, dormNumber: null }));
+  };
+
+  const validateAllFields = () => {
+    const errors = {};
+
+    // Name validation
+    if (!formData.name.trim()) {
+      errors.name = t('nameRequired');
+    } else if (formData.name.trim().length < 2) {
+      errors.name = t('nameTooShort');
+    }
+
+    // Phone number validation
+    const phoneDigits = formData.phoneNumber.replace(/\D/g, '');
+    if (!formData.phoneNumber.trim() || formData.phoneNumber === '+7') {
+      errors.phoneNumber = t('phoneRequired');
+    } else if (phoneDigits.length !== 11 || !formData.phoneNumber.startsWith('+7')) {
+      errors.phoneNumber = t('phoneInvalid');
+    }
+
+    // Dorm validation
+    const dormNum = parseInt(formData.dormNumber);
+    if (!formData.dormNumber.trim()) {
+      errors.dormNumber = t('dormRequired');
+    } else if (isNaN(dormNum) || dormNum < 1 || dormNum > 31) {
+      errors.dormNumber = t('dormInvalid');
+    }
+
+    // Password validation (only if password is being changed)
+    if (formData.password && formData.password.length < 6) {
+      errors.password = t('passwordTooShort');
+    }
+
+    // Confirm password validation (only if password is being changed)
+    if (formData.password && !formData.confirmPassword) {
+      errors.confirmPassword = t('confirmPasswordRequired');
+    } else if (formData.password && formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = t('passwordsDoNotMatch');
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   // Using the successful profile photo upload from AccountScreen
@@ -251,7 +339,6 @@ const [isSubmitting, setIsSubmitting] = useState(false);
   const updateProfileData = async (avatarUrl) => {
     const updates = {
       name: formData.name,
-      username: formData.username,
       dorm: formData.dormNumber,
       phone_number: formData.phoneNumber,
       allow_phone_contact: formData.allowPhoneContact,
@@ -260,22 +347,6 @@ const [isSubmitting, setIsSubmitting] = useState(false);
   
     if (avatarUrl) {
       updates.avatar_url = avatarUrl;
-    }
-  
-    // First check if username is taken (excluding current user)
-    const { data: existingUser, error: checkError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('username', formData.username)
-      .neq('id', userId)
-      .single();
-  
-    if (checkError && checkError.code !== 'PGRST116') {
-      throw { type: PROFILE_ERROR_CODES.DATABASE, error: checkError };
-    }
-  
-    if (existingUser) {
-      throw { type: PROFILE_ERROR_CODES.USERNAME_TAKEN };
     }
   
     return await supabase
@@ -298,10 +369,9 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       setFormErrors({});
       setIsSubmitting(true);
 
-      // Validate form
-      const { isValid, errors } = validateProfileForm(formData, t);
-      if (!isValid) {
-        setFormErrors(errors);
+      // Enhanced validation - no data sent unless all fields are correct
+      if (!validateAllFields()) {
+        setIsSubmitting(false);
         return;
       }
 
@@ -315,16 +385,19 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       let avatarUrl = null;
       if (profilePhotoChanged) {
         try {
-          avatarUrl = await handleProfilePhotoUpload();
-          if (avatarUrl) {
+          const fileName = await handleProfilePhotoUpload();
+          if (fileName) {
             // Get the public URL for the uploaded avatar
             const { data: urlData } = supabase.storage
               .from('avatars')
-              .getPublicUrl(avatarUrl);
+              .getPublicUrl(fileName);
             
             if (urlData && urlData.publicUrl) {
+              // Store the full public URL in the database
+              avatarUrl = urlData.publicUrl;
               // Update the preview with the new URL
               setProfilePhotoPreview(urlData.publicUrl);
+              console.log('Profile photo uploaded successfully:', urlData.publicUrl);
             }
           }
         } catch (photoError) {
@@ -445,26 +518,7 @@ const [isSubmitting, setIsSubmitting] = useState(false);
               )}
             </View>
             
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.text }]}>{t('Username')}</Text>
-              <TextInput
-                style={[
-                  styles.input, 
-                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
-                  formErrors.username && { borderColor: colors.error, backgroundColor: colors.error + '10' }
-                ]}
-                placeholder={t('Enter a username')}
-                placeholderTextColor={colors.placeholder}
-                value={formData.username}
-                onChangeText={(text) => {
-                  updateFormData('username', text);
-                  setFormErrors(prev => ({ ...prev, username: null }));
-                }}
-              />
-              {formErrors.username && (
-                <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.username}</Text>
-              )}
-            </View>
+
             
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.text }]}>{t('Dorm')}</Text>
@@ -477,10 +531,8 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 placeholder={t('Enter your dorm')}
                 placeholderTextColor={colors.placeholder}
                 value={formData.dormNumber}
-                onChangeText={(text) => {
-                  updateFormData('dormNumber', text);
-                  setFormErrors(prev => ({ ...prev, dormNumber: null }));
-                }}
+                onChangeText={handleDormNumberChange}
+                keyboardType="numeric"
               />
               {formErrors.dormNumber && (
                 <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.dormNumber}</Text>
@@ -495,13 +547,10 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                   { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
                   formErrors.phoneNumber && { borderColor: colors.error, backgroundColor: colors.error + '10' }
                 ]}
-                placeholder={t('Enter your phone number')}
+                placeholder="+7 XXX XXX XX XX"
                 placeholderTextColor={colors.placeholder}
                 value={formData.phoneNumber}
-                onChangeText={(text) => {
-                  updateFormData('phoneNumber', text);
-                  setFormErrors(prev => ({ ...prev, phoneNumber: null }));
-                }}
+                onChangeText={handlePhoneNumberChange}
                 keyboardType="phone-pad"
               />
               {formErrors.phoneNumber && (
@@ -511,21 +560,35 @@ const [isSubmitting, setIsSubmitting] = useState(false);
             
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.text }]}>{t('New Password')} {t('(optional)')}</Text>
-              <TextInput
-                style={[
-                  styles.input, 
-                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
-                  formErrors.password && { borderColor: colors.error, backgroundColor: colors.error + '10' }
-                ]}
-                placeholder={t('Enter new password')}
-                placeholderTextColor={colors.placeholder}
-                value={formData.password}
-                onChangeText={(text) => {
-                  updateFormData('password', text);
-                  setFormErrors(prev => ({ ...prev, password: null }));
-                }}
-                secureTextEntry={true}
-              />
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={[
+                    styles.input, 
+                    styles.passwordInput,
+                    { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                    formErrors.password && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                  ]}
+                  placeholder={t('Enter new password')}
+                  placeholderTextColor={colors.placeholder}
+                  value={formData.password}
+                  onChangeText={(text) => {
+                    updateFormData('password', text);
+                    setFormErrors(prev => ({ ...prev, password: null }));
+                  }}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Ionicons 
+                    name={showPassword ? 'eye-off' : 'eye'} 
+                    size={20} 
+                    color={colors.textSecondary} 
+                  />
+                </TouchableOpacity>
+              </View>
               {formErrors.password && (
                 <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.password}</Text>
               )}
@@ -533,6 +596,44 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 {t('Leave empty to keep current password')}
               </Text>
             </View>
+
+            {formData.password && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.text }]}>{t('Confirm Password')}</Text>
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={[
+                      styles.input, 
+                      styles.passwordInput,
+                      { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                      formErrors.confirmPassword && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                    ]}
+                    placeholder={t('Confirm new password')}
+                    placeholderTextColor={colors.placeholder}
+                    value={formData.confirmPassword}
+                    onChangeText={(text) => {
+                      updateFormData('confirmPassword', text);
+                      setFormErrors(prev => ({ ...prev, confirmPassword: null }));
+                    }}
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    <Ionicons 
+                      name={showConfirmPassword ? 'eye-off' : 'eye'} 
+                      size={20} 
+                      color={colors.textSecondary} 
+                    />
+                  </TouchableOpacity>
+                </View>
+                {formErrors.confirmPassword && (
+                  <Text style={[styles.errorText, { color: colors.error }]}>{formErrors.confirmPassword}</Text>
+                )}
+              </View>
+            )}
 
             {/* Allow Phone Contact */}
             <View style={styles.toggleContainer}>
@@ -698,6 +799,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 15,
     fontSize: 16,
+  },
+  passwordContainer: {
+    position: 'relative',
+  },
+  passwordInput: {
+    paddingRight: 50, // Space for eye button
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 15,
+    top: '41%',
+    transform: [{ translateY: -10 }],
+    padding: 5,
   },
   errorText: {
     fontSize: 12,

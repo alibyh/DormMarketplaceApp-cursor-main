@@ -259,27 +259,27 @@ export const createInitialProfile = async (userId, profileData) => {
       return { data: existingProfile };
     }
 
-    // Create new profile
-    const { data, error } = await supabase
-      .from('profiles')
-      .insert([{
-        id: userId,
-        username: profileData.username,
-        email: profileData.email,
-        name: profileData.name || null,
-        dorm: profileData.dorm || null,
-        phone_number: profileData.phone_number || null,
-        allow_phone_contact: profileData.allow_phone_contact || false,
-        is_admin: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }])
-      .select()
-      .single();
+    // Use the safe database function to create profile (without avatar_url)
+    const { data, error } = await supabase.rpc('create_user_profile_safe', {
+      user_id: userId,
+      profile_username: profileData.username,
+      profile_email: profileData.email,
+      profile_name: profileData.name || null,
+      profile_dorm: profileData.dorm || null,
+      profile_phone: profileData.phone_number || null,
+      profile_allow_phone: profileData.allow_phone_contact || false,
+      profile_is_admin: false
+    });
 
     if (error) {
       console.error('Profile creation error:', error);
       throw error;
+    }
+
+    // Check if the function returned an error
+    if (data && data.error) {
+      console.error('Database function error:', data);
+      throw new Error(data.message || 'Database function failed');
     }
 
     console.log('Profile created successfully:', data);
@@ -287,12 +287,47 @@ export const createInitialProfile = async (userId, profileData) => {
 
   } catch (error) {
     console.error('Profile creation failed:', error);
-    return { 
-      error: {
-        message: error.message || 'Failed to create profile',
-        details: error.details || {},
-        code: error.code || 'PROFILE_CREATION_ERROR'
-      }
-    };
+    
+          // Fallback to direct insert if the function fails
+      try {
+        console.log('Attempting fallback profile creation...');
+        console.log('Profile data with avatar_url:', profileData);
+        
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('profiles')
+          .insert([{
+            id: userId,
+            username: profileData.username,
+            email: profileData.email,
+            name: profileData.name || null,
+            dorm: profileData.dorm || null,
+            phone_number: profileData.phone_number || null,
+            allow_phone_contact: profileData.allow_phone_contact || false,
+            avatar_url: profileData.avatar_url || null,
+            is_admin: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }])
+          .select()
+          .single();
+
+        if (fallbackError) {
+          throw fallbackError;
+        }
+
+        console.log('Fallback profile creation successful:', fallbackData);
+        console.log('Avatar URL in created profile:', fallbackData.avatar_url);
+        return { data: fallbackData };
+
+    } catch (fallbackError) {
+      console.error('Fallback profile creation also failed:', fallbackError);
+      return { 
+        error: {
+          message: error.message || 'Failed to create profile',
+          details: error.details || {},
+          code: error.code || 'PROFILE_CREATION_ERROR'
+        }
+      };
+    }
   }
 };

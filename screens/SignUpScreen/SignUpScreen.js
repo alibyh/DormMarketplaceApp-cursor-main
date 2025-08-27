@@ -42,7 +42,7 @@ const SignUpScreen = ({ navigation }) => {
     name: '',
     username: '',
     email: '',
-    phoneNumber: '',
+    phoneNumber: '+7',
     dormNumber: '',
     password: '',
     confirmPassword: '',
@@ -53,12 +53,165 @@ const SignUpScreen = ({ navigation }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [formErrors, setFormErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const updateFormData = (key, value) => {
     setFormData(prev => ({
       ...prev,
       [key]: value
     }));
+  };
+
+  // Enhanced validation functions
+  const validatePhoneNumber = (phone) => {
+    // Remove any non-digit characters except +
+    const cleaned = phone.replace(/[^\d+]/g, '');
+    
+    // If it doesn't start with +7, add it
+    if (!cleaned.startsWith('+7')) {
+      return '+7' + cleaned.replace(/^\+/, '');
+    }
+    
+    return cleaned;
+  };
+
+  const formatPhoneNumber = (phone) => {
+    // Remove all non-digits except +
+    const cleaned = phone.replace(/[^\d+]/g, '');
+    
+    // Ensure it starts with +7
+    let formatted = cleaned;
+    if (!formatted.startsWith('+7')) {
+      formatted = '+7' + formatted.replace(/^\+/, '');
+    }
+    
+    // Add spaces: +7 XXX XXX XX XX
+    const digits = formatted.replace(/\D/g, '');
+    if (digits.length >= 2) {
+      const countryCode = digits.substring(0, 1);
+      const areaCode = digits.substring(1, 4);
+      const firstPart = digits.substring(4, 7);
+      const secondPart = digits.substring(7, 9);
+      const thirdPart = digits.substring(9, 11);
+      
+      let result = `+${countryCode}`;
+      if (areaCode) result += ` ${areaCode}`;
+      if (firstPart) result += ` ${firstPart}`;
+      if (secondPart) result += ` ${secondPart}`;
+      if (thirdPart) result += ` ${thirdPart}`;
+      
+      return result;
+    }
+    
+    return formatted;
+  };
+
+  const validateDormNumber = (dorm) => {
+    const num = parseInt(dorm);
+    if (isNaN(num) || num < 1 || num > 31) {
+      return null;
+    }
+    return num.toString();
+  };
+
+  const handlePhoneNumberChange = (text) => {
+    const formatted = formatPhoneNumber(text);
+    updateFormData('phoneNumber', formatted);
+    setFormErrors(prev => ({ ...prev, phoneNumber: null }));
+  };
+
+  const handleDormNumberChange = (text) => {
+    // Only allow digits
+    const digitsOnly = text.replace(/\D/g, '');
+    updateFormData('dormNumber', digitsOnly);
+    setFormErrors(prev => ({ ...prev, dormNumber: null }));
+  };
+
+  const checkUsernameUniqueness = async (username) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', username.trim())
+        .single();
+      
+      if (error && error.code === 'PGRST116') {
+        // No user found with this username - it's unique
+        return true;
+      }
+      
+      if (data) {
+        // Username already exists
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error checking username uniqueness:', error);
+      return false;
+    }
+  };
+
+  const validateAllFields = () => {
+    const errors = {};
+
+    // Name validation
+    if (!formData.name.trim()) {
+      errors.name = t('nameRequired');
+    } else if (formData.name.trim().length < 2) {
+      errors.name = t('nameTooShort');
+    }
+
+    // Username validation
+    if (!formData.username.trim()) {
+      errors.username = t('usernameRequired');
+    } else if (formData.username.trim().length < 3) {
+      errors.username = t('usernameTooShort');
+    } else if (!/^[a-zA-Z0-9_]+$/.test(formData.username.trim())) {
+      errors.username = t('usernameInvalid');
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!formData.email.trim()) {
+      errors.email = t('emailRequired');
+    } else if (!emailRegex.test(formData.email.trim())) {
+      errors.email = t('emailInvalid');
+    }
+
+    // Phone number validation
+    const phoneDigits = formData.phoneNumber.replace(/\D/g, '');
+    if (!formData.phoneNumber.trim() || formData.phoneNumber === '+7') {
+      errors.phoneNumber = t('phoneRequired');
+    } else if (phoneDigits.length !== 11 || !formData.phoneNumber.startsWith('+7')) {
+      errors.phoneNumber = t('phoneInvalid');
+    }
+
+    // Dorm validation
+    const dormNum = parseInt(formData.dormNumber);
+    if (!formData.dormNumber.trim()) {
+      errors.dormNumber = t('dormRequired');
+    } else if (isNaN(dormNum) || dormNum < 1 || dormNum > 31) {
+      errors.dormNumber = t('dormInvalid');
+    }
+
+    // Password validation
+    if (!formData.password) {
+      errors.password = t('passwordRequired');
+    } else if (formData.password.length < 6) {
+      errors.password = t('passwordTooShort');
+    }
+
+    // Confirm password validation
+    if (!formData.confirmPassword) {
+      errors.confirmPassword = t('confirmPasswordRequired');
+    } else if (formData.password !== formData.confirmPassword) {
+      errors.confirmPassword = t('passwordsDoNotMatch');
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const pickImage = async () => {
@@ -124,10 +277,17 @@ const SignUpScreen = ({ navigation }) => {
       setError(null);
       setFormErrors({});
 
-      // Validation
-      const { isValid, errors } = validateSignupForm(formData, t);
-      if (!isValid) {
-        setFormErrors(errors);
+      // Enhanced validation - no data sent unless all fields are correct
+      if (!validateAllFields()) {
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Check username uniqueness
+      const isUsernameUnique = await checkUsernameUniqueness(formData.username);
+      if (!isUsernameUnique) {
+        setFormErrors({ username: t('usernameTaken') });
+        setIsSubmitting(false);
         return;
       }
 
@@ -160,8 +320,53 @@ const SignUpScreen = ({ navigation }) => {
       console.log('Auth user created:', userId);
 
       console.log('Creating profile for user:', userId);
-  
-      // Create profile
+
+      // Upload profile photo first if exists
+      let avatarUrl = null;
+      if (formData.profilePhoto) {
+        console.log('Uploading profile photo...');
+        const photoFileName = `${userId}_${Date.now()}.jpg`;
+        
+        try {
+          // Convert image to binary data using the same method as UpdateProfileScreen
+          const fetchResponse = await fetch(formData.profilePhoto);
+          if (!fetchResponse.ok) {
+            throw new Error('Failed to fetch image');
+          }
+          
+          const arrayBuffer = await fetchResponse.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          
+          const { error: uploadError } = await supabase.storage
+            .from('avatars')
+            .upload(photoFileName, uint8Array, {
+              contentType: 'image/jpeg',
+              upsert: true
+            });
+
+          if (uploadError) {
+            console.error('Profile photo upload failed:', uploadError);
+            // Continue without photo
+          } else {
+            // Get the public URL for the uploaded avatar
+            const { data: urlData } = supabase.storage
+              .from('avatars')
+              .getPublicUrl(photoFileName);
+            
+            if (urlData && urlData.publicUrl) {
+              avatarUrl = urlData.publicUrl;
+              console.log('Profile photo uploaded successfully:', avatarUrl);
+            } else {
+              console.error('Failed to get public URL for uploaded photo');
+            }
+          }
+        } catch (photoError) {
+          console.error('Error processing profile photo:', photoError);
+          // Continue without photo
+        }
+      }
+
+      // Create profile first (without avatar URL)
       const { data: profile, error: profileError } = await createInitialProfile(userId, {
         email: formData.email.trim(),
         username: formData.username.trim(),
@@ -179,36 +384,19 @@ const SignUpScreen = ({ navigation }) => {
 
       console.log('Profile created:', profile);
 
-      // Upload profile photo if exists
-      if (formData.profilePhoto) {
-        console.log('Uploading profile photo...');
-        const photoFileName = `${userId}-${Date.now()}.jpg`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(photoFileName, {
-            uri: formData.profilePhoto,
-            type: 'image/jpeg',
-            name: photoFileName
-          });
+      // Update profile with avatar URL if photo was uploaded
+      if (avatarUrl) {
+        console.log('Updating profile with avatar URL:', avatarUrl);
+        const { data: updateData, error: updateError } = await supabase
+          .from('profiles')
+          .update({ avatar_url: avatarUrl })
+          .eq('id', userId)
+          .select();
 
-        if (uploadError) {
-          console.error('Profile photo upload failed:', uploadError);
-          // Continue without photo
+        if (updateError) {
+          console.error('Profile avatar update failed:', updateError);
         } else {
-          // Update profile with avatar URL
-          const { data: publicUrl } = supabase.storage
-            .from('avatars')
-            .getPublicUrl(photoFileName);
-
-          const { error: updateError } = await supabase
-            .from('profiles')
-            .update({ avatar_url: publicUrl.publicUrl })
-            .eq('id', userId);
-
-          if (updateError) {
-            console.error('Profile photo URL update failed:', updateError);
-          }
+          console.log('Profile avatar updated successfully:', updateData);
         }
       }
 
@@ -371,13 +559,10 @@ const SignUpScreen = ({ navigation }) => {
                   { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
                   formErrors.phoneNumber && { borderColor: colors.error, backgroundColor: colors.error + '10' }
                 ]}
-                placeholder={t('phoneNumber')}
+                placeholder="+7 XXX XXX XX XX"
                 placeholderTextColor={colors.placeholder}
                 value={formData.phoneNumber}
-                onChangeText={(text) => {
-                  updateFormData('phoneNumber', text);
-                  setFormErrors(prev => ({ ...prev, phoneNumber: null }));
-                }}
+                onChangeText={handlePhoneNumberChange}
                 keyboardType="phone-pad"
               />
               {formErrors.phoneNumber && (
@@ -396,10 +581,8 @@ const SignUpScreen = ({ navigation }) => {
                 placeholder={t('dormNumber')}
                 placeholderTextColor={colors.placeholder}
                 value={formData.dormNumber}
-                onChangeText={(text) => {
-                  updateFormData('dormNumber', text);
-                  setFormErrors(prev => ({ ...prev, dormNumber: null }));
-                }}
+                onChangeText={handleDormNumberChange}
+                keyboardType="numeric"
               />
               {formErrors.dormNumber && (
                 <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.dormNumber}</Text>
@@ -460,22 +643,35 @@ const SignUpScreen = ({ navigation }) => {
             
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.text }]}>{t('password')}</Text>
-              <TextInput
-                style={[
-                  styles.modernInput, 
-                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
-                  formErrors.password && { borderColor: colors.error, backgroundColor: colors.error + '10' }
-                ]}
-                placeholder={t('password')}
-                placeholderTextColor={colors.placeholder}
-                value={formData.password}
-                onChangeText={(text) => {
-                  updateFormData('password', text);
-                  setFormErrors(prev => ({ ...prev, password: null }));
-                }}
-                secureTextEntry
-                autoCapitalize="none"
-              />
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={[
+                    styles.modernInput, 
+                    styles.passwordInput,
+                    { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                    formErrors.password && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                  ]}
+                  placeholder={t('password')}
+                  placeholderTextColor={colors.placeholder}
+                  value={formData.password}
+                  onChangeText={(text) => {
+                    updateFormData('password', text);
+                    setFormErrors(prev => ({ ...prev, password: null }));
+                  }}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowPassword(!showPassword)}
+                >
+                  <Ionicons 
+                    name={showPassword ? 'eye-off' : 'eye'} 
+                    size={20} 
+                    color={colors.textSecondary} 
+                  />
+                </TouchableOpacity>
+              </View>
               {formErrors.password && (
                 <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.password}</Text>
               )}
@@ -483,22 +679,35 @@ const SignUpScreen = ({ navigation }) => {
 
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.text }]}>{t('confirmPassword')}</Text>
-              <TextInput
-                style={[
-                  styles.modernInput, 
-                  { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
-                  formErrors.confirmPassword && { borderColor: colors.error, backgroundColor: colors.error + '10' }
-                ]}
-                placeholder={t('confirmPasswordPlaceholder')}
-                placeholderTextColor={colors.placeholder}
-                value={formData.confirmPassword}
-                onChangeText={(text) => {
-                  updateFormData('confirmPassword', text);
-                  setFormErrors(prev => ({ ...prev, confirmPassword: null }));
-                }}
-                secureTextEntry
-                autoCapitalize="none"
-              />
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={[
+                    styles.modernInput, 
+                    styles.passwordInput,
+                    { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text },
+                    formErrors.confirmPassword && { borderColor: colors.error, backgroundColor: colors.error + '10' }
+                  ]}
+                  placeholder={t('confirmPasswordPlaceholder')}
+                  placeholderTextColor={colors.placeholder}
+                  value={formData.confirmPassword}
+                  onChangeText={(text) => {
+                    updateFormData('confirmPassword', text);
+                    setFormErrors(prev => ({ ...prev, confirmPassword: null }));
+                  }}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  style={styles.eyeButton}
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  <Ionicons 
+                    name={showConfirmPassword ? 'eye-off' : 'eye'} 
+                    size={20} 
+                    color={colors.textSecondary} 
+                  />
+                </TouchableOpacity>
+              </View>
               {formErrors.confirmPassword && (
                 <Text style={[styles.fieldError, { color: colors.error }]}>{formErrors.confirmPassword}</Text>
               )}
@@ -686,6 +895,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  
+  // Password Container
+  passwordContainer: {
+    position: 'relative',
+  },
+  passwordInput: {
+    paddingRight: 50, // Space for eye button
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 15,
+    top: '42%',
+    transform: [{ translateY: -10 }],
+    padding: 5,
   },
   
   // Contact Preference

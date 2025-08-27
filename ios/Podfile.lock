@@ -2034,6 +2034,8 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - Yoga
+  - RNSVG (15.12.1):
+    - React-Core
   - SDWebImage (5.21.1):
     - SDWebImage/Core (= 5.21.1)
   - SDWebImage/Core (5.21.1)
@@ -2188,6 +2190,7 @@ DEPENDENCIES:
   - "RNCPicker (from `../node_modules/@react-native-picker/picker`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - RNScreens (from `../node_modules/react-native-screens`)
+  - RNSVG (from `../node_modules/react-native-svg`)
   - yandex-mobile-ads (from `../node_modules/yandex-mobile-ads`)
   - Yoga (from `../node_modules/react-native/ReactCommon/yoga`)
 
@@ -2427,6 +2430,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-gesture-handler"
   RNScreens:
     :path: "../node_modules/react-native-screens"
+  RNSVG:
+    :path: "../node_modules/react-native-svg"
   yandex-mobile-ads:
     :path: "../node_modules/yandex-mobile-ads"
   Yoga:
@@ -2558,6 +2563,7 @@ SPEC CHECKSUMS:
   RNCPicker: 124b4fb5859ba1a3fd53a91e16d1e7a0fc016e59
   RNGestureHandler: 6e640921d207f070e4bbcf79f4e6d0eabf323389
   RNScreens: 9bec3dd4bfa5b3e7a046ad80fc918525b4feeafa
+  RNSVG: 3544def7b3ddc43c7ba69dade91bacf99f10ec46
   SDWebImage: f29024626962457f3470184232766516dee8dfea
   SDWebImageAVIFCoder: 00310d246aab3232ce77f1d8f0076f8c4b021d90
   SDWebImageSVGCoder: 15a300a97ec1c8ac958f009c02220ac0402e936c
@@ -2571,6 +2577,6 @@ SPEC CHECKSUMS:
   YandexMobileAds: 8dcb47fcef796dc566cf550d0dd7098520044c5d
   Yoga: c758bfb934100bb4bf9cbaccb52557cee35e8bdf
 
-PODFILE CHECKSUM: dffbfeb225ffd42f83c4fd26b1f461696ceb1ea0
+PODFILE CHECKSUM: a0cc018b6fd3a7fcc73e8e10053a00e4908462a0
 
 COCOAPODS: 1.16.2

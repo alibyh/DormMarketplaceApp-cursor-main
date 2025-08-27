@@ -17,7 +17,6 @@ export const createProduct = async (productData, imageFiles = []) => {
         dorm: productData.dorm,
         price: parseFloat(productData.price),
         seller_id: user.id,
-        is_deleted: false,
         is_visible: true,
         created_at: new Date().toISOString()
       })
@@ -26,30 +25,39 @@ export const createProduct = async (productData, imageFiles = []) => {
 
     if (insertError) throw insertError;
 
-    // 2. Upload images and collect their paths
+    // 2. Upload images and collect their paths (optimized)
     const imagePaths = [];
-    for (let i = 0; i < imageFiles.length; i++) {
-      const image = imageFiles[i];
-      
-      // Convert image to binary data
-      const fetchResponse = await fetch(image.uri);
-      if (!fetchResponse.ok) throw new Error('Failed to fetch image');
-      
-      const arrayBuffer = await fetchResponse.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      
-      const fileName = `${product.id}/${Date.now()}_${i}.jpg`;
+    if (imageFiles.length > 0) {
+      // Upload images in parallel for better performance
+      const uploadPromises = imageFiles.map(async (image, i) => {
+        try {
+          // Convert image to binary data
+          const fetchResponse = await fetch(image.uri);
+          if (!fetchResponse.ok) throw new Error('Failed to fetch image');
+          
+          const arrayBuffer = await fetchResponse.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+          
+          const fileName = `${product.id}/${Date.now()}_${i}.jpg`;
 
-      // Upload image
-      const { error: uploadError } = await supabase.storage
-        .from('product_images')
-        .upload(fileName, uint8Array, {
-          contentType: 'image/jpeg',
-          upsert: true
-        });
+          // Upload image
+          const { error: uploadError } = await supabase.storage
+            .from('product_images')
+            .upload(fileName, uint8Array, {
+              contentType: 'image/jpeg',
+              upsert: true
+            });
 
-      if (uploadError) throw uploadError;
-      imagePaths.push(fileName);
+          if (uploadError) throw uploadError;
+          return fileName;
+        } catch (error) {
+          console.error(`Failed to upload image ${i}:`, error);
+          throw error;
+        }
+      });
+
+      // Wait for all uploads to complete
+      imagePaths.push(...(await Promise.all(uploadPromises)));
     }
 
     // 3. Update product with image paths
@@ -62,6 +70,24 @@ export const createProduct = async (productData, imageFiles = []) => {
       .eq('id', product.id);
 
     if (updateError) throw updateError;
+
+    // 4. Increment user's product count
+    try {
+      const { error: countError } = await supabase
+        .from('profiles')
+        .update({ 
+          product_count: supabase.sql`COALESCE(product_count, 0) + 1` 
+        })
+        .eq('id', user.id);
+      
+      if (countError) {
+        console.warn('Failed to increment product count:', countError);
+        // Don't throw error here as product creation was successful
+      }
+    } catch (countError) {
+      console.warn('Failed to increment product count:', countError);
+      // Don't throw error here as product creation was successful
+    }
 
     return { data: product, error: null };
   } catch (error) {
@@ -80,7 +106,6 @@ export const getAllProducts = async () => {
         profiles:seller_id (username, id),
         product_images (image_url)
       `)
-      .eq('is_deleted', false)
       .eq('is_visible', true)
       .order('created_at', { ascending: false });
 
@@ -142,7 +167,6 @@ export const getProductsBySellerId = async (sellerId) => {
         product_images (image_url)
       `)
       .eq('seller_id', sellerId)
-      .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -156,6 +180,10 @@ export const getProductsBySellerId = async (sellerId) => {
 // Update a product
 export const updateProduct = async (productId, updates) => {
   try {
+    // Get current user to increment their product count
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) throw new Error('User must be logged in');
+
     const { data, error } = await supabase
       .from('products')
       .update(updates)
@@ -164,6 +192,25 @@ export const updateProduct = async (productId, updates) => {
       .single();
 
     if (error) throw error;
+
+    // Increment user's product count for edits
+    try {
+      const { error: countError } = await supabase
+        .from('profiles')
+        .update({ 
+          product_count: supabase.sql`COALESCE(product_count, 0) + 1` 
+        })
+        .eq('id', user.id);
+      
+      if (countError) {
+        console.warn('Failed to increment product count for edit:', countError);
+        // Don't throw error here as product update was successful
+      }
+    } catch (countError) {
+      console.warn('Failed to increment product count for edit:', countError);
+      // Don't throw error here as product update was successful
+    }
+
     return data;
   } catch (error) {
     console.error('Update product error:', error);
@@ -171,15 +218,53 @@ export const updateProduct = async (productId, updates) => {
   }
 };
 
-// Delete a product (soft delete)
+// Delete a product (hard delete to save database space)
 export const deleteProduct = async (productId) => {
   try {
+    console.log('Starting product deletion for:', productId);
+    
+    // Always use hard delete to save database space
+    console.log('Using hard delete to save database space');
     const { error } = await supabase
       .from('products')
-      .update({ is_deleted: true })
+      .delete()
       .eq('id', productId);
-
+    
     if (error) throw error;
+    console.log('Product hard deleted successfully');
+    
+    // Update conversations to mark product as deleted
+    try {
+      console.log('Updating conversations for deleted product');
+      const { error: convError } = await supabase
+        .from('conversations')
+        .update({ product_deleted: true })
+        .eq('product_id', productId);
+      
+      if (convError && convError.code !== '42703') {
+        // Only log error if it's not a missing column error
+        console.warn('Could not update conversations for deleted product:', convError);
+      } else {
+        console.log('Conversations updated successfully');
+        
+        // Trigger conversations refresh to update the UI immediately
+        try {
+          const { triggerConversationsRefresh } = await import('./messageService');
+          triggerConversationsRefresh();
+          console.log('Triggered conversations refresh');
+          
+          // Also emit a custom event for immediate UI update
+          const { EventRegister } = await import('react-native-event-listeners');
+          EventRegister.emit('PRODUCT_DELETED', { productId });
+          console.log('Emitted PRODUCT_DELETED event from productService');
+        } catch (refreshError) {
+          console.warn('Could not trigger conversations refresh:', refreshError);
+        }
+      }
+    } catch (convError) {
+      // Ignore errors if product_deleted column doesn't exist yet
+      console.warn('Could not update conversations (column may not exist):', convError);
+    }
   } catch (error) {
     console.error('Delete product error:', error);
     throw error;
@@ -323,4 +408,24 @@ export const getImageUrl = (imagePath) => {
     .from('product_images')
     .getPublicUrl(imagePath);
   return data?.publicUrl;
+};
+
+// Get user's product count
+export const getUserProductCount = async () => {
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) throw new Error('User must be logged in');
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('product_count')
+      .eq('id', user.id)
+      .single();
+
+    if (error) throw error;
+    return data?.product_count || 0;
+  } catch (error) {
+    console.error('Get user product count error:', error);
+    return 0; // Return 0 if there's an error
+  }
 };

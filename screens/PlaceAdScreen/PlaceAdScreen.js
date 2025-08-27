@@ -13,7 +13,8 @@ import {
   ActivityIndicator,
   Platform,
   KeyboardAvoidingView,
-  Dimensions
+  Dimensions,
+  Linking
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { AntDesign, Ionicons } from '@expo/vector-icons';
@@ -22,34 +23,62 @@ import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWr
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import { processImageForUpload, uploadImageToSupabase, getPublicUrl } from '../../utils/imageUtils';
+import { checkAuthenticationWithFallback } from '../../utils/authUtils';
 
 const { width } = Dimensions.get('window');
 
 const testBucketAccess = async () => {
   try {
-    // Test bucket listing
-    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-    if (bucketError) throw bucketError;
 
+    
+    // Note: listBuckets() often returns empty array even when buckets exist
+    // So we'll test individual bucket access instead
+    
     // Test product_images bucket
     const { data: productFiles, error: productError } = await supabase.storage
       .from('product_images')
       .list();
+
+    if (productError) {
+      console.error('Error accessing product_images bucket:', productError);
+    } else {
+
+    }
 
     // Test buy-orders-images bucket
     const { data: buyOrderFiles, error: buyOrderError } = await supabase.storage
       .from('buy-orders-images')
       .list();
 
+    if (buyOrderError) {
+      console.error('Error accessing buy-orders-images bucket:', buyOrderError);
+    } else {
+
+    }
+
     // Test public URL generation
     if (productFiles?.length > 0) {
-      const { data: urlData } = await supabase.storage
+      const { data: urlData, error: urlError } = await supabase.storage
         .from('product_images')
         .getPublicUrl(productFiles[0].name);
+      
+      if (urlError) {
+        console.error('Error generating public URL:', urlError);
+      } else {
+
+      }
     }
+
+
 
   } catch (error) {
     console.error('Bucket access test failed:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    });
   }
 };
 
@@ -70,6 +99,7 @@ const PlaceAdScreen = ({ navigation }) => {
   const [error, setError] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isNetworkError, setIsNetworkError] = useState(false);
 
   const updateProductData = (key, value) => {
     setProductData(prev => ({
@@ -103,9 +133,17 @@ const PlaceAdScreen = ({ navigation }) => {
 
   const checkAuthentication = async () => {
     try {
-      const { data: { user }, error } = await supabase.auth.getUser();
+      const { user, isNetworkError, error } = await checkAuthenticationWithFallback();
       
-      // Handle auth errors gracefully
+      if (isNetworkError) {
+        // Network error - show network error UI instead of treating as logged out
+        console.log('Network error during auth check:', error);
+        setIsNetworkError(true);
+        setIsAuthenticated(false);
+        setIsCheckingAuth(false);
+        return;
+      }
+      
       if (error) {
         console.log('Auth error (expected for unauthenticated users):', error);
         setIsAuthenticated(false);
@@ -226,25 +264,50 @@ const PlaceAdScreen = ({ navigation }) => {
         return;
       }
 
+      // Request permissions first
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          t('permissionRequired'),
+          t('photoLibraryPermissionRequired'),
+          [
+            { text: t('Cancel'), style: 'cancel' },
+            { text: t('Settings'), onPress: () => Linking.openSettings() }
+          ]
+        );
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.8,
         allowsMultipleSelection: true,
         selectionLimit: 5 - images.length,
+        allowsEditing: false,
       });
 
       if (!result.canceled && result.assets) {
-        const newImages = result.assets.map(asset => ({
+
+        
+        const newImages = result.assets.map((asset, index) => ({
           uri: asset.uri,
-          type: 'image/jpeg',
-          name: `photo_${Date.now()}.jpg`
+          type: asset.type || 'image/jpeg',
+          name: `photo_${Date.now()}_${index}.jpg`,
+          width: asset.width,
+          height: asset.height,
+          fileSize: asset.fileSize
         }));
         
         setImages(prev => [...prev, ...newImages].slice(0, 5));
+      } else if (result.canceled) {
       }
     } catch (error) {
       console.error('Error picking image:', error);
-      Alert.alert(t('error'), t('couldNotSelectImage'));
+      Alert.alert(
+        t('error'), 
+        t('couldNotSelectImage'),
+        [{ text: t('OK') }]
+      );
     }
   };
 
@@ -262,7 +325,7 @@ const PlaceAdScreen = ({ navigation }) => {
 
   const handleSubmit = async (values, { setSubmitting }) => {
     try {
-      console.log('Starting submission...');
+
       if (images.length === 0) {
         Alert.alert(t('error'), t('pleaseAddOneImage'));
         return;
@@ -274,7 +337,7 @@ const PlaceAdScreen = ({ navigation }) => {
       if (!user) throw new Error('Not authenticated');
 
       // Check if profile exists, create if it doesn't
-      console.log('Checking user profile...');
+
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('id')
@@ -282,7 +345,7 @@ const PlaceAdScreen = ({ navigation }) => {
         .single();
 
       if (!profile) {
-        console.log('Creating user profile...');
+
         const { error: createProfileError } = await supabase
           .from('profiles')
           .insert([{
@@ -297,11 +360,12 @@ const PlaceAdScreen = ({ navigation }) => {
         }
       }
 
-      // Create base record
-      console.log('Creating product/order record...');
-      const { data: newItem, error: insertError } = await supabase
-        .from(values.adType === 'sell' ? 'products' : 'buy_orders')
-        .insert([{
+      // Create base record with better error handling and RLS workaround
+      let newItem;
+      let insertError;
+
+      try {
+        const insertData = {
           name: values.name,
           description: values.description,
           dorm: values.dorm,
@@ -315,65 +379,277 @@ const PlaceAdScreen = ({ navigation }) => {
           is_available: true,
           main_image_url: null,
           images: []
-        }])
-        .select()
-        .single();
+        };
 
-      if (insertError) {
-        console.error('Insert error:', insertError);
-        throw insertError;
+        // First attempt: Try normal insert
+        let { data, error } = await supabase
+          .from(values.adType === 'sell' ? 'products' : 'buy_orders')
+          .insert([insertData])
+          .select()
+          .single();
+
+                 // If RLS policy error, try alternative approaches
+         if (error && error.code === '42501' && error.message.includes('row-level security policy')) {
+           console.warn('RLS policy error detected, trying alternative approaches...');
+           
+           // Try 1: RPC call as fallback
+           try {
+             const { data: rpcData, error: rpcError } = await supabase.rpc(
+               values.adType === 'sell' ? 'create_product_with_auth' : 'create_buy_order_with_auth',
+               values.adType === 'sell' ? {
+                 p_name: values.name,
+                 p_description: values.description,
+                 p_dorm: values.dorm,
+                 p_price: parseFloat(values.price),
+                 p_seller_id: user.id
+               } : {
+                 p_name: values.name,
+                 p_description: values.description,
+                 p_dorm: values.dorm,
+                 p_user_id: user.id
+               }
+             );
+
+             if (!rpcError && rpcData) {
+               data = rpcData;
+               error = null;
+             } else {
+               console.error('RPC fallback failed:', rpcError);
+               throw rpcError || new Error('RPC function not available');
+             }
+           } catch (rpcError) {
+             console.error('RPC approach failed:', rpcError);
+             
+             // Try 2: Direct SQL insert as last resort
+             try {
+               console.warn('Attempting direct SQL insert as last resort...');
+               
+               // Use a simpler approach - just try the insert again with different error handling
+               const { data: retryData, error: retryError } = await supabase
+                 .from(values.adType === 'sell' ? 'products' : 'buy_orders')
+                 .insert([insertData])
+                 .select()
+                 .single();
+
+               if (retryError) {
+                 console.error('All insert attempts failed:', retryError);
+                 throw new Error('Unable to create record. Please check your database permissions or contact support.');
+               } else {
+                 data = retryData;
+                 error = null;
+               }
+             } catch (retryError) {
+               console.error('All fallback attempts failed:', retryError);
+               throw new Error('Database access denied. Please try again later or contact support.');
+             }
+           }
+         }
+
+        if (error) {
+          console.error('Insert error:', error);
+          throw error;
+        }
+
+        newItem = data;
+
+      } catch (error) {
+        console.error('Failed to create record:', error);
+        
+        // Provide more specific error messages
+        let errorMessage = 'Failed to create listing';
+        if (error.message.includes('Database security policy') || error.message.includes('row-level security policy')) {
+          errorMessage = 'Database access denied. Please try again or contact support.';
+        } else if (error.message.includes('duplicate key')) {
+          errorMessage = 'A similar listing already exists.';
+        } else if (error.message.includes('foreign key')) {
+          errorMessage = 'Invalid user or dorm information.';
+        } else if (error.message.includes('not null')) {
+          errorMessage = 'Please fill in all required fields.';
+        } else if (error.message.includes('Unable to create record')) {
+          errorMessage = 'Database configuration issue. Please contact support.';
+        }
+        
+        Alert.alert(t('error'), errorMessage);
+        throw error;
       }
 
-      // Rest of your existing image upload code...
+      // Upload images to storage
       const uploadedImages = [];
       for (let i = 0; i < images.length; i++) {
         try {
           const image = images[i];
           const fileName = `${newItem.id}/${Date.now()}_${i}.jpg`;
-          const bucket = values.adType === 'sell' ? 'product_images' : 'buy-orders-images';
+          let bucket = values.adType === 'sell' ? 'product_images' : 'buy-orders-images';
 
-          // Convert image to binary data using the same method as SignUpScreen
-          const fetchResponse = await fetch(image.uri);
-          if (!fetchResponse.ok) {
-            throw new Error('Failed to fetch image');
+          // Check if the bucket is accessible by trying to list files
+          // Note: listBuckets() often returns empty array even when buckets exist
+          let bucketAccessible = false;
+          try {
+            const { data: bucketFiles, error: bucketListError } = await supabase.storage
+              .from(bucket)
+              .list('', { limit: 1 }); // Just check if we can access the bucket
+            
+            if (bucketListError) {
+              console.warn(`Bucket ${bucket} not accessible: ${bucketListError.message}`);
+              // Try fallback bucket
+              bucket = 'product_images';
+              const { data: fallbackFiles, error: fallbackError } = await supabase.storage
+                .from(bucket)
+                .list('', { limit: 1 });
+              
+              if (fallbackError) {
+                console.error(`Fallback bucket ${bucket} also not accessible: ${fallbackError.message}`);
+                throw new Error(`No suitable storage bucket found`);
+              } else {
+                bucketAccessible = true;
+              }
+            } else {
+              bucketAccessible = true;
+            }
+          } catch (accessError) {
+            console.error(`Error checking bucket access: ${accessError.message}`);
+            throw new Error(`Storage access error: ${accessError.message}`);
           }
 
-          const arrayBuffer = await fetchResponse.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
+          // Convert image to binary data with better error handling
+          let imageData;
+          try {
+            const fetchResponse = await fetch(image.uri);
+            if (!fetchResponse.ok) {
+              throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`);
+            }
 
-          // Upload using the same method as SignUpScreen
-          const { error: uploadError } = await supabase.storage
-            .from(bucket)
-            .upload(fileName, uint8Array, {
-              contentType: 'image/jpeg',
-              upsert: true
-            });
-
-          if (uploadError) {
-            throw uploadError;
+            const arrayBuffer = await fetchResponse.arrayBuffer();
+            imageData = new Uint8Array(arrayBuffer);
+            
+            if (imageData.length === 0) {
+              throw new Error('Image data is empty');
+            }
+            
+          } catch (fetchError) {
+            console.error(`Error fetching image ${i + 1}:`, fetchError);
+            throw new Error(`Failed to process image: ${fetchError.message}`);
           }
 
-          // Get the public URL
-          const { data: urlData } = supabase.storage
+          // Upload with retry logic
+          let uploadSuccess = false;
+          let uploadError = null;
+          
+          for (let retry = 0; retry < 3; retry++) {
+            try {
+              const { data: uploadData, error: uploadErr } = await supabase.storage
+                .from(bucket)
+                .upload(fileName, imageData, {
+                  contentType: 'image/jpeg',
+                  upsert: true,
+                  cacheControl: '3600'
+                });
+
+              if (uploadErr) {
+                uploadError = uploadErr;
+                console.warn(`Upload attempt ${retry + 1} failed for image ${i + 1}:`, uploadErr);
+                if (retry < 2) {
+                  await new Promise(resolve => setTimeout(resolve, 1000 * (retry + 1)));
+                  continue;
+                }
+              } else {
+                uploadSuccess = true;
+                break;
+              }
+            } catch (retryError) {
+              uploadError = retryError;
+              console.warn(`Upload attempt ${retry + 1} threw error for image ${i + 1}:`, retryError);
+              if (retry < 2) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * (retry + 1)));
+                continue;
+              }
+            }
+          }
+
+          if (!uploadSuccess) {
+            throw uploadError || new Error('Upload failed after 3 attempts');
+          }
+
+          // Verify the upload by getting the public URL
+          const { data: urlData, error: urlError } = supabase.storage
             .from(bucket)
             .getPublicUrl(fileName);
 
+          if (urlError) {
+            console.warn(`Warning: Could not get public URL for ${fileName}:`, urlError);
+          } else {
+          }
 
           uploadedImages.push(fileName);
 
         } catch (error) {
           console.error(`Error uploading image ${i + 1}:`, error);
+          
+          // More user-friendly error message
+          let errorMessage = 'Unknown upload error';
+          if (error.message.includes('Storage access error')) {
+            errorMessage = 'Storage access denied. Please check your connection and try again.';
+          } else if (error.message.includes('not found')) {
+            errorMessage = 'Storage configuration error. Please contact support.';
+          } else if (error.message.includes('Failed to process image')) {
+            errorMessage = 'Image processing failed. Please try selecting a different image.';
+          } else if (error.message.includes('Upload failed after 3 attempts')) {
+            errorMessage = 'Upload failed due to network issues. Please check your connection and try again.';
+          } else {
+            errorMessage = `Upload failed: ${error.message}`;
+          }
+          
           Alert.alert(
             'Upload Error',
-            `Failed to upload image ${i + 1}: ${error.message}`
+            `Failed to upload image ${i + 1}: ${errorMessage}`,
+            [
+              {
+                text: 'Continue without this image',
+                onPress: () => {
+
+                }
+              },
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => {
+                  throw new Error('User cancelled upload');
+                }
+              }
+            ]
           );
-          throw error;
+          
+          // Continue with other images instead of throwing
+          continue;
         }
       }
 
       // 3. Update record with image paths
       if (uploadedImages.length === 0) {
-        throw new Error('No images were uploaded successfully');
+        console.error('No images were uploaded successfully');
+        Alert.alert(
+          t('error'),
+          t('noImagesUploaded'),
+          [
+            {
+              text: t('OK'),
+              onPress: () => {
+                // Clean up the created record since no images were uploaded
+                supabase
+                  .from(values.adType === 'sell' ? 'products' : 'buy_orders')
+                  .delete()
+                  .eq('id', newItem.id)
+                  .then(() => {
+
+                  })
+                  .catch(cleanupError => {
+                    console.error('Error cleaning up record:', cleanupError);
+                  });
+              }
+            }
+          ]
+        );
+        return;
       }
 
       const { error: updateError } = await supabase
@@ -414,7 +690,38 @@ const PlaceAdScreen = ({ navigation }) => {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('Checking authentication...')}</Text>
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('checkingAuthentication')}</Text>
+      </View>
+    );
+  }
+
+  // Show network error UI if network error
+  if (isNetworkError) {
+    return (
+      <View style={[styles.signInPrompt, { backgroundColor: colors.background }]}>
+        <View style={[styles.signInPromptContent, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+          <Ionicons name="wifi-outline" size={80} color={colors.error} />
+          <Text style={[styles.signInPromptTitle, { color: colors.text }]}>{t('noInternet')}</Text>
+          <Text style={[styles.signInPromptText, { color: colors.textSecondary }]}>
+            {t('checkConnection')}
+          </Text>
+          <TouchableOpacity
+            style={[styles.signInPromptButton, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              setIsNetworkError(false);
+              setIsCheckingAuth(true);
+              checkAuthentication();
+            }}
+          >
+            <Text style={[styles.signInPromptButtonText, { color: colors.headerText }]}>{t('retry')}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={[styles.backButtonText, { color: colors.textSecondary }]}>{t('goBack')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -507,7 +814,7 @@ const PlaceAdScreen = ({ navigation }) => {
                       { color: adType === 'buy' ? colors.headerText : colors.text },
                       adType === 'buy' && styles.adTypeTextActive
                     ]}>
-                      {t('Want to Buy')}
+                      {t('lookingForProduct')}
                     </Text>
                   </TouchableOpacity>
                 </View>

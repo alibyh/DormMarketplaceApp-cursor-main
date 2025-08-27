@@ -20,11 +20,15 @@ import { SvgXml } from 'react-native-svg';
 import supabase from '../../services/supabaseConfig';
 import ProductCard from '../../components/ProductCard/ProductCard';
 import { useTranslation } from 'react-i18next';
-import { checkNetworkConnection } from '../../utils/networkUtils'; // Add this import
+import { checkNetworkConnection } from '../../utils/networkUtils';
+import { checkAuthenticationWithFallback } from '../../utils/authUtils';
+import AboutUsModal from '../../components/AboutUsModal/AboutUsModal';
+import * as blockingService from '../../services/blockingService';
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import LoadingState from '../../components/LoadingState/LoadingState';
 import RetryView from '../../components/RetryView/RetryView';
 import { useTheme } from '../../context/ThemeContext';
+import { format } from 'date-fns';
 
 // Add these imports at the top
 import { Alert } from 'react-native';
@@ -81,6 +85,8 @@ const handleHomeError = (error, t, type = ERROR_TYPES.UNKNOWN) => {
 
 const { width: screenWidth } = Dimensions.get('window');
 
+
+
 // Add this helper function at the top of the file, after the imports
 const getImageUrl = (path, bucket) => {
   if (!path) return null;
@@ -122,14 +128,64 @@ const HomeScreen = ({ navigation, route }) => {
   const [error, setError] = useState(null);
   const [adLoaded, setAdLoaded] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAboutUsModalVisible, setIsAboutUsModalVisible] = useState(false);
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [blockedByUsers, setBlockedByUsers] = useState([]);
 
-  const productsPerPage = 6;
+  const productsPerPage = 5;
 
-  // Check authentication status
+  // Add date formatting function inside component
+  const formatDate = useCallback((dateString) => {
+    if (!dateString) return '';
+    
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+    
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const timeString = date.toLocaleTimeString('en-GB', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: false 
+    });
+    
+    if (date.toDateString() === now.toDateString()) {
+      try {
+        return t('todayAt', { time: timeString });
+      } catch (error) {
+        return `Today at ${timeString}`;
+      }
+    } else if (date.toDateString() === yesterday.toDateString()) {
+      try {
+        return t('yesterdayAt', { time: timeString });
+      } catch (error) {
+        return `Yesterday at ${timeString}`;
+      }
+    } else {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+  }, [t]);
+
+  // Check authentication status and get user dorm
   const checkAuthStatus = async () => {
     try {
       const { data: { user }, error } = await supabase.auth.getUser();
       setIsAuthenticated(!!user && !error);
+      
+      if (user) {
+        // Get user's dorm from profile
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('dorm')
+          .eq('id', user.id)
+          .single();
+        
+        if (profile && !profileError) {
+          setUserDorm(profile.dorm);
+        }
+      }
     } catch (error) {
       console.error('Auth check error:', error);
       setIsAuthenticated(false);
@@ -138,13 +194,13 @@ const HomeScreen = ({ navigation, route }) => {
 
   const bannerScrollX = useRef(new Animated.Value(0)).current;
   const bannerFlatListRef = useRef(null);
+  const noProductsOpacity = useRef(new Animated.Value(0)).current;
   const [isSortModalVisible, setIsSortModalVisible] = useState(false);
+  const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
+  const [selectedDormFilter, setSelectedDormFilter] = useState('all');
+  const [userDorm, setUserDorm] = useState(null);
   const handleAboutUsClick = () => {
-    Alert.alert(
-      t('aboutUs'), // Assuming `t` is for translation
-      t('aboutContent'),
-      [{ text: t('ok') }]
-    );
+    setIsAboutUsModalVisible(true);
   };
 
   // Memoized sorting function
@@ -173,9 +229,13 @@ const HomeScreen = ({ navigation, route }) => {
 
   // Compute total products and displayed products
   const totalListings = useMemo(() => {
-    const baseListings = searchQuery ? filteredListings : listings;
-    return sortListings(baseListings, sortType);
-  }, [searchQuery, listings, filteredListings, sortType, sortListings]);
+    // Always use filteredListings if there's any filter applied (search or dorm)
+    const baseListings = (searchQuery || selectedDormFilter !== 'all') ? filteredListings : listings;
+    const sorted = sortListings(baseListings, sortType);
+    
+    
+    return sorted;
+  }, [searchQuery, selectedDormFilter, listings, filteredListings, sortType, sortListings]);
 
   const totalPages = Math.ceil(totalListings.length / productsPerPage);
 
@@ -184,6 +244,95 @@ const HomeScreen = ({ navigation, route }) => {
     const endIndex = startIndex + productsPerPage;
     return totalListings.slice(startIndex, endIndex);
   }, [totalListings, currentPage, productsPerPage]);
+
+  // Fetch blocked users
+  const fetchBlockedUsers = useCallback(async () => {
+    try {
+      
+      // Try to fetch blocked users with individual error handling
+      let blockedUsersList = [];
+      let blockedByUsersList = [];
+      
+      try {
+        if (typeof blockingService.getBlockedUsers === 'function') {
+          blockedUsersList = await blockingService.getBlockedUsers();
+
+        } else {
+          console.error('getBlockedUsers is not a function:', blockingService.getBlockedUsers);
+          // Fallback: try direct database query
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const { data, error } = await supabase
+                .from('blocked_users')
+                .select('blocked_id')
+                .eq('blocker_id', user.id);
+              
+              if (!error && data && data.length > 0) {
+                const blockedIds = data.map(item => item.blocked_id);
+                const { data: profiles } = await supabase
+                  .from('profiles')
+                  .select('id, username, avatar_url, dorm')
+                  .in('id', blockedIds);
+                
+                blockedUsersList = profiles || [];
+
+              }
+            }
+          } catch (fallbackError) {
+            console.error('Fallback error:', fallbackError);
+            blockedUsersList = [];
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching blocked users:', error);
+        blockedUsersList = [];
+      }
+      
+      try {
+        if (typeof blockingService.getBlockers === 'function') {
+          blockedByUsersList = await blockingService.getBlockers();
+
+        } else {
+          console.error('getBlockers is not a function:', blockingService.getBlockers);
+          // Fallback: try direct database query
+          try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const { data, error } = await supabase
+                .from('blocked_users')
+                .select('blocker_id')
+                .eq('blocked_id', user.id);
+              
+              if (!error && data && data.length > 0) {
+                const blockerIds = data.map(item => item.blocker_id);
+                const { data: profiles } = await supabase
+                  .from('profiles')
+                  .select('id, username, avatar_url, dorm')
+                  .in('id', blockerIds);
+                
+                blockedByUsersList = profiles || [];
+
+              }
+            }
+          } catch (fallbackError) {
+            console.error('Fallback error:', fallbackError);
+            blockedByUsersList = [];
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching blocked by users:', error);
+        blockedByUsersList = [];
+      }
+      
+      setBlockedUsers(blockedUsersList);
+      setBlockedByUsers(blockedByUsersList);
+      return { blockedUsersList, blockedByUsersList };
+    } catch (error) {
+      console.error('Error in fetchBlockedUsers:', error);
+      return { blockedUsersList: [], blockedByUsersList: [] };
+    }
+  }, []);
 
   // Fetch Banners
   const fetchBanners = async () => {
@@ -213,13 +362,16 @@ const HomeScreen = ({ navigation, route }) => {
   };
 
   // Update the fetchListings function
-  const fetchListings = async () => {
+  const fetchListings = useCallback(async () => {
     try {
       const isConnected = await checkNetworkConnection();
 
       if (!isConnected) {
         throw { type: ERROR_TYPES.NETWORK };
       }
+
+      // Fetch blocked users first
+      const { blockedUsersList, blockedByUsersList } = await fetchBlockedUsers();
 
       // Fetch products
 
@@ -313,10 +465,27 @@ const HomeScreen = ({ navigation, route }) => {
       });
 
       // Combine and sort all listings
-      const allListings = [...processedProducts, ...processedBuyOrders]
+      let allListings = [...processedProducts, ...processedBuyOrders]
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
+      // Filter out blocked users' products
 
+      if (blockedUsersList.length > 0 || blockedByUsersList.length > 0) {
+        const blockedUserIds = new Set([
+          ...blockedUsersList.map(user => user.id),
+          ...blockedByUsersList.map(user => user.id)
+        ]);
+        
+
+        
+        allListings = allListings.filter(listing => {
+          const isBlocked = blockedUserIds.has(listing.seller.id);
+          if (isBlocked) {
+          }
+          return !isBlocked;
+        });
+        
+      }
 
       // Update state
       setListings(allListings);
@@ -329,7 +498,7 @@ const HomeScreen = ({ navigation, route }) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [fetchBlockedUsers]);
 
   const handleSocialMediaClick = (url) => {
     Linking.openURL(url).catch(err => console.error("Error opening URL", err));
@@ -363,13 +532,15 @@ const HomeScreen = ({ navigation, route }) => {
         <View style={styles.footerContent}>
           <View style={styles.footerColumn}>
             <Text style={[styles.footerTitle, { color: colors.primary }]}>{t('quickLinks')}</Text>
-            <TouchableOpacity onPress={handleAboutUsClick}>
+            <TouchableOpacity onPress={handleAboutUsClick} style={styles.footerLinkContainer}>
+              <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} style={styles.footerLinkIcon} />
               <Text style={[styles.footerLink, { color: colors.textSecondary, textDecorationLine: 'underline' }]}>
-                {t('aboutUs')}
+                {t('aboutApp')}
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => Linking.openURL('mailto:dmp@mail.ru')}>
+            <TouchableOpacity onPress={() => Linking.openURL('mailto:dmp@mail.ru')} style={styles.footerLinkContainer}>
+              <Ionicons name="mail-outline" size={16} color={colors.textSecondary} style={styles.footerLinkIcon} />
               <Text style={[styles.footerLink, { color: colors.textSecondary }]}>{t('contactUs')}</Text>
             </TouchableOpacity>
           </View>
@@ -465,58 +636,114 @@ const HomeScreen = ({ navigation, route }) => {
     </TouchableOpacity>
   );
 
-  // Render Banner Pagination
-  const renderBannerPagination = () => (
-    <View style={styles.paginationContainer}>
-      {[{ id: 'yandex-banner' }, ...banners].map((_, index) => {
-        const inputRange = [
-          (index - 1) * screenWidth,
-          index * screenWidth,
-          (index + 1) * screenWidth,
-        ];
-        const opacity = bannerScrollX.interpolate({
-          inputRange,
-          outputRange: [0.3, 1, 0.3],
-          extrapolate: 'clamp',
-        });
-        return (
-          <Animated.View
-            key={index}
-            style={[styles.paginationDot, { opacity }]}
-          />
-        );
-      })}
-    </View>
-  );
 
 
-  // Handle Search
+  // Handle Search and Filter
   const handleSearch = useCallback((query) => {
     setSearchQuery(query);
     setCurrentPage(1);
 
+    let filtered = listings;
+
+    // Apply search filter
     if (query) {
-      const filtered = listings.filter(item =>
+      filtered = filtered.filter(item =>
         item.name.toLowerCase().includes(query.toLowerCase()) ||
         item.dorm.toLowerCase().includes(query.toLowerCase())
       );
-      setFilteredListings(filtered);
-    } else {
-      setFilteredListings(listings);
     }
-  }, [listings]);
+
+    // Apply dorm filter
+    if (selectedDormFilter !== 'all') {
+      if (selectedDormFilter === 'myDorm') {
+        // Filter for user's dorm (you'll need to get this from user profile)
+        // For now, we'll show all items
+        filtered = filtered.filter(item => item.dorm);
+      } else {
+        filtered = filtered.filter(item => item.dorm === selectedDormFilter);
+      }
+    }
+
+    setFilteredListings(filtered);
+  }, [listings, selectedDormFilter]);
+
+  // Get current filter label
+  const getCurrentFilterLabel = useCallback(() => {
+    if (selectedDormFilter === 'all') return t('allDorms');
+    if (selectedDormFilter === 'myDorm') return userDorm ? `${t('myDorm')} (${userDorm})` : t('myDorm');
+    return t('dorm') + ` ${selectedDormFilter}`;
+  }, [selectedDormFilter, t, userDorm]);
+
+  // Separate function to apply filters
+  const applyFilters = useCallback(() => {
+    let filtered = listings;
+
+    // Apply search filter
+    if (searchQuery) {
+      filtered = filtered.filter(item =>
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.dorm.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+
+    // Apply dorm filter
+    if (selectedDormFilter !== 'all') {
+      if (selectedDormFilter === 'myDorm') {
+        // Filter for user's actual dorm
+        if (userDorm) {
+          filtered = filtered.filter(item => {
+            const itemDorm = item.dorm?.toString() || '';
+            const userDormStr = userDorm?.toString() || '';
+            const matches = itemDorm === userDormStr;
+            
+            return matches;
+          });
+        }
+      } else {
+        
+        filtered = filtered.filter(item => {
+          // Use exact match only for better precision
+          const itemDorm = item.dorm?.toString() || '';
+          const filterDorm = selectedDormFilter?.toString() || '';
+          
+          const matches = itemDorm === filterDorm;
+          return matches;
+        });
+      }
+    }
+    setFilteredListings(filtered);
+    setCurrentPage(1);
+  }, [listings, searchQuery, selectedDormFilter, userDorm]);
 
   // Check auth status on mount and when screen focuses
   useEffect(() => {
     checkAuthStatus();
   }, []);
 
+  // Apply filters when selectedDormFilter changes
+  useEffect(() => {
+    applyFilters();
+  }, [selectedDormFilter, applyFilters]);
+
+  // Animate no products icon when displayedListings changes
+  useEffect(() => {
+    if (displayedListings.length === 0) {
+      Animated.timing(noProductsOpacity, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      noProductsOpacity.setValue(0);
+    }
+  }, [displayedListings.length, noProductsOpacity]);
+
   // Initial Data Load
   useEffect(() => {
     const initializeData = async () => {
       setIsLoading(true);
       try {
-        await handleRefresh();
+        await Promise.all([fetchBanners(), fetchListings()]);
       } catch (error) {
         console.error('Initial load error:', error);
       } finally {
@@ -525,7 +752,7 @@ const HomeScreen = ({ navigation, route }) => {
     };
 
     initializeData();
-  }, [handleRefresh]);
+  }, [fetchListings]);
 
   // Banner Auto-slide Effect
   useEffect(() => {
@@ -570,6 +797,9 @@ const HomeScreen = ({ navigation, route }) => {
       // Check auth status when screen comes into focus
       checkAuthStatus();
       
+      // Refresh blocked users when screen comes into focus
+      fetchBlockedUsers();
+      
       // Use route.params instead of navigation.getParam
       if (route?.params?.refresh) {
         handleRefresh();
@@ -579,7 +809,7 @@ const HomeScreen = ({ navigation, route }) => {
     });
 
     return unsubscribe;
-  }, [navigation, handleRefresh]);
+  }, [navigation, handleRefresh, fetchBlockedUsers]);
 
   // Pagination Component
   const PaginationComponent = useCallback(() => {
@@ -714,6 +944,108 @@ const HomeScreen = ({ navigation, route }) => {
     );
   }, [isSortModalVisible, sortType, t]);
 
+  // Filter Modal Component
+  const FilterModal = useCallback(() => {
+    // Get available dorms from current listings
+    const availableDorms = [...new Set(listings.map(item => item.dorm))];
+    
+    const dormOptions = [
+      { label: t('allDorms'), value: 'all' },
+      { label: t('myDorm'), value: 'myDorm' },
+      ...Array.from({ length: 31 }, (_, i) => {
+        const dormNumber = `${i + 1}`;
+        const hasProducts = availableDorms.includes(dormNumber);
+        return {
+          label: t('dorm') + ` ${i + 1}`,
+          value: dormNumber,
+          hasProducts
+        };
+      })
+    ];
+
+    return (
+      <Modal
+        transparent={true}
+        visible={isFilterModalVisible}
+        animationType="fade"
+        onRequestClose={() => setIsFilterModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={[styles.modalOverlay, { backgroundColor: colors.modalOverlay }]}
+          activeOpacity={1}
+          onPress={() => setIsFilterModalVisible(false)}
+        >
+          <View
+            style={[styles.filterModalContainer, { backgroundColor: colors.modalBackground, shadowColor: colors.shadow }]}
+          >
+            <Text style={[styles.modalTitle, { color: colors.text }]}>{t('filterByDorm')}</Text>
+            <ScrollView 
+              style={styles.filterScrollView}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+            >
+              {dormOptions.map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.filterOptionButton,
+                    { borderBottomColor: colors.border },
+                    selectedDormFilter === option.value && { backgroundColor: colors.surface },
+                    !option.hasProducts && option.value !== 'all' && option.value !== 'myDorm' && { opacity: 0.5 }
+                  ]}
+                  onPress={() => {
+                    setSelectedDormFilter(option.value);
+                    setIsFilterModalVisible(false);
+                    // Apply filters immediately
+                    applyFilters();
+                  }}
+                >
+                  <View style={styles.filterOptionContent}>
+                    <Text
+                      style={[
+                        styles.filterOptionText,
+                        { color: colors.text },
+                        selectedDormFilter === option.value && { color: colors.primary },
+                        !option.hasProducts && option.value !== 'all' && option.value !== 'myDorm' && { color: colors.textSecondary }
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {option.hasProducts && option.value !== 'all' && option.value !== 'myDorm' && (
+                      <View style={[styles.productIndicator, { backgroundColor: colors.primary }]}>
+                        <Text style={[styles.productIndicatorText, { color: colors.headerText }]}>
+                          {listings.filter(item => item.dorm === option.value).length}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <View style={styles.filterModalButtons}>
+              <TouchableOpacity
+                style={[styles.clearFilterButton, { backgroundColor: colors.error + '20' }]}
+                onPress={() => {
+                  setSelectedDormFilter('all');
+                  setIsFilterModalVisible(false);
+                  applyFilters();
+                }}
+              >
+                <Text style={[styles.clearFilterButtonText, { color: colors.error }]}>{t('clearFilter')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.cancelButton, { backgroundColor: colors.surface }]}
+                onPress={() => setIsFilterModalVisible(false)}
+              >
+                <Text style={[styles.cancelButtonText, { color: colors.text }]}>{t('cancel')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    );
+  }, [isFilterModalVisible, selectedDormFilter, t, searchQuery]);
+
   // Removed conflicting ad initialization - now handled in YandexBanner component
 
   // Removed unused interstitial ad function
@@ -738,7 +1070,8 @@ const HomeScreen = ({ navigation, route }) => {
             colors={['#ff5722']}
             tintColor="#ff5722"
             title={t('pullToRefresh')}
-            progressViewOffset={50}
+            progressViewOffset={Platform.OS === 'ios' ? 100 : 80}
+            progressBackgroundColor={colors.background}
           />
         }
       >
@@ -782,7 +1115,10 @@ const HomeScreen = ({ navigation, route }) => {
                 </View>
 
                 {/* Center - App Title */}
-                <Text style={[styles.headerTitle, { color: colors.primary }]}>{t('appTitle')}</Text>
+                <View style={styles.headerTitleContainer}>
+                  <Text style={[styles.headerTitle, { color: colors.headerText }]}>u-Shop </Text>
+                  <Text style={[styles.headerTitle, { color: colors.primary }]}>SFU</Text>
+                </View>
 
                 {/* Right side - Logo */}
                 <View style={styles.headerRight}>
@@ -806,6 +1142,26 @@ const HomeScreen = ({ navigation, route }) => {
                 onChangeText={handleSearch}
                 clearButtonMode="while-editing"
               />
+              <TouchableOpacity
+                style={[
+                  styles.filterContainer,
+                  selectedDormFilter !== 'all',
+                  { borderColor: colors.surface }
+                ]}
+                onPress={() => setIsFilterModalVisible(true)}
+              >
+                <Ionicons 
+                  name="location" 
+                  size={18} 
+                  color={selectedDormFilter !== 'all' ? colors.primary : colors.textSecondary} 
+                />
+                <Text style={[
+                  styles.filterLabel, 
+                  { color: selectedDormFilter !== 'all' ? colors.primary : colors.textSecondary }
+                ]}>
+                  {getCurrentFilterLabel()}
+                </Text>
+              </TouchableOpacity>
             </View>
             {/* Banner Carousel */}
             {(banners.length > 0 || true) && (
@@ -862,27 +1218,93 @@ const HomeScreen = ({ navigation, route }) => {
 
             {/* Sort Modal */}
             <SortModal />
+            
+            {/* Filter Modal */}
+            <FilterModal />
 
             {/* Products Rendering */}
             {displayedListings.length === 0 ? (
               <View style={styles.noProductsContainer}>
+                <Animated.View style={[styles.noProductsIconContainer, { opacity: noProductsOpacity }]}>
+                  <Ionicons 
+                    name="search-outline" 
+                    size={80} 
+                    color={colors.textSecondary} 
+                    style={styles.noProductsIcon}
+                  />
+                </Animated.View>
                 <Text style={[styles.noProductsText, { color: colors.textSecondary }]}>
-                  {searchQuery ? t('noProductsMatchSearch') : t('noProductsAvailable')}
+                  {searchQuery ? t('noProductsMatchSearch') : 
+                   selectedDormFilter !== 'all' ? t('noProductsInDorm') : t('noProductsAvailable')}
                 </Text>
+                {selectedDormFilter !== 'all' && (
+                  <Text style={[styles.noProductsSubtext, { color: colors.textSecondary }]}>
+                    {t('noProductsInDormSubtext', { dorm: getCurrentFilterLabel() })}
+                  </Text>
+                )}
+                <TouchableOpacity
+                  style={[styles.clearFiltersButton, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    setSearchQuery('');
+                    setSelectedDormFilter('all');
+                    applyFilters();
+                  }}
+                >
+                  <Text style={[styles.clearFiltersButtonText, { color: colors.headerText }]}>
+                    {t('clearAllFilters')}
+                  </Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <View style={styles.productsContainer}>
                 {displayedListings.map((listing) => (
                   <TouchableOpacity
                     key={listing.id}
-                    onPress={() => {
-                      navigation.navigate(
-                        listing.type === 'sell' ? 'ProductDetails' : 'BuyOrderDetails', // Changed from 'BuyOrder'
-                        {
-                          productId: listing.id,
-                          type: listing.type
+                    onPress={async () => {
+                      try {
+                        // Check network connectivity before navigating
+                        const isConnected = await checkNetworkConnection();
+                        if (!isConnected) {
+                          Alert.alert(
+                            t('noInternet'),
+                            t('checkConnection'),
+                            [
+                              { text: t('cancel'), style: 'cancel' },
+                              { 
+                                text: t('retry'), 
+                                onPress: async () => {
+                                  const retryConnected = await checkNetworkConnection();
+                                  if (retryConnected) {
+                                    navigation.navigate(
+                                      listing.type === 'sell' ? 'ProductDetails' : 'BuyOrderDetails',
+                                      {
+                                        productId: listing.id,
+                                        type: listing.type
+                                      }
+                                    );
+                                  }
+                                }
+                              }
+                            ]
+                          );
+                          return;
                         }
-                      );
+                        
+                        navigation.navigate(
+                          listing.type === 'sell' ? 'ProductDetails' : 'BuyOrderDetails',
+                          {
+                            productId: listing.id,
+                            type: listing.type
+                          }
+                        );
+                      } catch (error) {
+                        console.error('Navigation error:', error);
+                        Alert.alert(
+                          t('error'),
+                          t('unableToOpenProduct'),
+                          [{ text: t('ok') }]
+                        );
+                      }
                     }}
                   >
                     <ProductCard
@@ -892,7 +1314,7 @@ const HomeScreen = ({ navigation, route }) => {
                       productImage={listing.photoUrl}
                       type={listing.type}
                       isWantToBuy={listing.type === 'buy'}
-                      createdAt={listing.createdAt}  // Add this line
+                      createdAt={formatDate(listing.createdAt)}
                     />
                   </TouchableOpacity>
                 ))}
@@ -907,6 +1329,12 @@ const HomeScreen = ({ navigation, route }) => {
           </>
         )}
       </ScrollView>
+      
+      {/* About Us Modal */}
+      <AboutUsModal 
+        visible={isAboutUsModalVisible}
+        onClose={() => setIsAboutUsModalVisible(false)}
+      />
     </ErrorBoundaryWrapper>
   );
 };
@@ -920,7 +1348,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    paddingBottom: 20,
+    paddingBottom: 0, // Remove bottom padding to let footer stick properly
   },
   header: {
     paddingTop: Platform.OS === 'ios' ? 50 : 20,
@@ -945,8 +1373,12 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
     flex: 1,
-    textAlign: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerLogo: {
     width: 50,
@@ -991,6 +1423,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginVertical: 20,
+    
   },
   paginationButton: {
     paddingHorizontal: 12,
@@ -1006,21 +1439,22 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: 20,
     paddingHorizontal: 15,
+    paddingBottom: 30, // Add extra bottom padding for safe area
     borderTopWidth: 1,
-    marginTop: 15,
+    marginTop: 15, // Remove top margin to stick to content
     alignItems: 'center',
-
   },
   footerContent: {
     flexDirection: 'row',
     marginBottom: 20,
+    justifyContent: 'space-evenly',
     alignItems: 'center',
-
+    gap: 50, // Add more gap between quick links and support sections
   },
   footerColumn: {
     flex: 1,
-    marginHorizontal: 10,
-    alignItems: 'right',
+    marginHorizontal: 15, // Increase horizontal margin for better spacing
+    alignItems: 'flex-start', // Center align for better visual balance
   },
 
   footerTitle: {
@@ -1028,8 +1462,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 10,
   },
-  footerLink: {
+  footerLinkContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 10,
+  },
+  footerLinkIcon: {
+    marginRight: 6,
+  },
+  footerLink: {
     fontSize: 14,
   },
   supportInfo: {
@@ -1106,11 +1547,35 @@ const styles = StyleSheet.create({
   noProductsText: {
     fontSize: 18,
   },
+  noProductsSubtext: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+    opacity: 0.8,
+  },
+  noProductsIconContainer: {
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  noProductsIcon: {
+    opacity: 0.6,
+  },
+  clearFiltersButton: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    alignItems: 'center',
+  },
+  clearFiltersButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 10,
-    paddingHorizontal: 15,
+    paddingHorizontal: 10,
     marginHorizontal: 10,
     marginBottom: 15,
     shadowOffset: { width: 0, height: 2 },
@@ -1126,6 +1591,21 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 50,
     fontSize: 16,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginLeft: 0,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  filterLabel: {
+    fontSize: 14,
+    marginLeft: 5,
+    fontWeight: '500',
   },
   productHeaderContainer: {
     flexDirection: 'row',
@@ -1162,6 +1642,66 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
+  filterModalContainer: {
+    position: 'absolute',
+    top: 300, // Position below search bar
+    right: 20,
+    left: 20,
+    maxHeight: 400,
+    borderRadius: 15,
+    padding: 15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  filterScrollView: {
+    maxHeight: 300,
+    marginVertical: 10,
+  },
+  filterOptionButton: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderRadius: 8,
+    marginVertical: 2,
+  },
+  filterOptionText: {
+    fontSize: 16,
+    textAlign: 'left',
+  },
+  filterOptionContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+  },
+  productIndicator: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  productIndicatorText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  filterModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 15,
+    gap: 10,
+  },
+  clearFilterButton: {
+    flex: 1,
+    padding: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  clearFilterButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -1183,12 +1723,12 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     marginTop: 15,
-    padding: 15,
-    borderRadius: 10,
+    padding: 8,
+    borderRadius: 6,
   },
   cancelButtonText: {
     textAlign: 'center',
-    fontSize: 16,
+    fontSize: 12,
   },
   loadingContainer: {
     flex: 1,

@@ -52,7 +52,8 @@
     "react-native-screens": "~4.10.0",
     "react-native-svg": "^15.12.1",
     "yandex-mobile-ads": "^7.14.0",
-    "yup": "^1.6.1"
+    "yup": "^1.6.1",
+    "expo-device": "~7.1.4"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

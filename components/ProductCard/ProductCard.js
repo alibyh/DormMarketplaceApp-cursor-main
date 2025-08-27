@@ -100,7 +100,7 @@ const ProductCard = ({ productName, price, dormNumber, productImage, type, isWan
             <Text style={[styles.dorm, { color: colors.textSecondary }]}>{dormNumber}</Text>
           </View>
           <Text style={[styles.timeText, { color: colors.textSecondary }]}>
-            {new Date(createdAt).toLocaleDateString()}
+            {createdAt}
           </Text>
         </View>
       </View>

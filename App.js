@@ -18,6 +18,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import * as SplashScreen from 'expo-splash-screen';
 import { handleAppError } from './utils/appErrorHandler';
 import { Image } from 'expo-image';
+import notificationService from './services/notificationService';
 
 // YandexAdsModule import removed to debug crash
 
@@ -34,18 +35,6 @@ import EditAdScreen from './screens/EditAdScreen/EditAdScreen';
 import UpdateProfileScreen from './screens/UpdateProfileScreen/UpdateProfileScreen';
 import BuyOrderDetails from './screens/BuyOrderDetails/BuyOrderDetails';
 
-const VERBOSE_LOGGING = false;
-const log = (message) => {
-  if (VERBOSE_LOGGING) {
-    console.log(message);
-  }
-};
-
-const LoadingIndicator = () => (
-  <View style={styles.loadingContainer}>
-    <ActivityIndicator size="large" color="#ff5722" />
-  </View>
-);
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -133,6 +122,33 @@ function MainTabNavigator() {
 const ThemedApp = ({ navigationRef }) => {
   const { getThemeColors } = useTheme();
   const colors = getThemeColors();
+
+  // Initialize notifications when component mounts
+  useEffect(() => {
+    const initializeNotifications = async () => {
+      try {
+        // Set up global navigation reference for notification navigation
+        global.navigationRef = navigationRef;
+        
+        // Initialize notification service
+        const success = await notificationService.initialize();
+        if (success) {
+          console.log('Notifications initialized successfully');
+        } else {
+          console.log('Failed to initialize notifications');
+        }
+      } catch (error) {
+        console.error('Error initializing notifications:', error);
+      }
+    };
+
+    initializeNotifications();
+
+    // Cleanup on unmount
+    return () => {
+      notificationService.cleanup();
+    };
+  }, [navigationRef]);
   
   return (
     <View style={[styles.appContainer, { backgroundColor: colors.background }]} testID="app-container">
@@ -263,7 +279,6 @@ const App = () => {
         await SplashScreen.preventAutoHideAsync();
 
         // Yandex Ads SDK initialization removed to debug crash
-        console.log('[App] Yandex Ads SDK initialization disabled for debugging');
 
         // Check for existing session
         const { data: { session }, error } = await supabase.auth.getSession();
@@ -272,8 +287,6 @@ const App = () => {
           throw error;
         }
 
-        console.log('[App] Initial session check:', session ? 'session exists' : 'no session');
-        console.log('[App] Setting isLoggedIn to:', !!session);
         setIsLoggedIn(!!session);
         setIsAuthReady(true);
       } catch (error) {
@@ -291,13 +304,10 @@ const App = () => {
   // 3. Auth state listener
   useEffect(() => {
     const subscription = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('[App] Auth state change:', event, session ? 'session exists' : 'no session');
       if (event === 'SIGNED_IN') {
-        console.log('[App] User signed in, setting isLoggedIn to true');
         setIsLoggedIn(true);
       }
       if (event === 'SIGNED_OUT') {
-        console.log('[App] User signed out, setting isLoggedIn to false');
         setIsLoggedIn(false);
       }
     });

@@ -7,7 +7,6 @@
     "orientation": "portrait",
     "icon": "./assets/S.F.U.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
     "scheme": "dormmarketplaceapp",
     "splash": {
       "image": "./assets/S.F.U.png",
@@ -58,10 +57,10 @@
         }
       ]
     ],
-    "owner": "alibyh3",
+    "owner": "alibyh5",
     "extra": {
       "eas": {
-        "projectId": "79cc41f1-7020-4f25-92fc-3fb09813399f"
+        "projectId": "acd807d0-6af5-4577-9ade-b19c1e81999d"
       }
     }
   }

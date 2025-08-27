@@ -23,6 +23,8 @@ import supabase from '../../services/supabaseConfig';
 import { handleAuthError } from '../../utils/authErrorHandler';
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import LoadingOverlay from '../../components/LoadingOverlay/LoadingOverlay'; // Add this import at the top
+import notificationService from '../../services/notificationService';
+import { checkPendingDeletion } from '../../services/accountDeletionService';
 
 // Add this near the top of your file, after the imports
 const checkNetworkConnection = async () => {
@@ -41,11 +43,12 @@ const LoginScreen = ({ navigation }) => {
   const { t, i18n } = useTranslation(); // Update to include i18n
   const { getThemeColors, currentTheme, changeTheme, THEME_TYPES } = useTheme();
   const colors = getThemeColors();
-  const [email, setEmail] = useState('');
+  const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Add keyboard listeners
   useEffect(() => {
@@ -70,6 +73,11 @@ const LoginScreen = ({ navigation }) => {
     return emailRegex.test(email);
   };
 
+  // Check if input is email or username
+  const isEmail = (input) => {
+    return input.includes('@');
+  };
+
   const toggleLanguage = () => {
     const newLang = i18n.language === 'en' ? 'ru' : 'en';
     i18n.changeLanguage(newLang);
@@ -82,13 +90,14 @@ const LoginScreen = ({ navigation }) => {
 
   const validateInputs = () => {
     console.log('Validating inputs...');
-    if (!email.trim() || !password.trim()) {
-      console.log('Validation failed: missing email or password');
+    if (!emailOrUsername.trim() || !password.trim()) {
+      console.log('Validation failed: missing email/username or password');
       setError(t('emailRequired'));
       return false;
     }
 
-    if (!isValidEmail(email)) {
+    // If input contains @, validate as email
+    if (isEmail(emailOrUsername) && !isValidEmail(emailOrUsername)) {
       console.log('Validation failed: invalid email format');
       setError(t('validEmail'));
       return false;
@@ -103,6 +112,8 @@ const LoginScreen = ({ navigation }) => {
     console.log('Validation passed');
     return true;
   };
+
+
 
   const handleLogin = async () => {
     console.log('Login button pressed');
@@ -125,20 +136,61 @@ const LoginScreen = ({ navigation }) => {
       }
       console.log('Network check passed');
       
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password: password
-      });
+      let loginData, loginError;
 
-      if (error) {
-        console.error('Login error:', error);
-        if (error.message === 'Invalid login credentials') {
+      if (isEmail(emailOrUsername)) {
+        // Login with email
+        console.log('Attempting login with email:', emailOrUsername.trim());
+        const result = await supabase.auth.signInWithPassword({
+          email: emailOrUsername.trim(),
+          password: password
+        });
+        loginData = result.data;
+        loginError = result.error;
+      } else {
+        // Login with username - first get user's email from profiles table
+        console.log('Attempting login with username:', emailOrUsername.trim());
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('username', emailOrUsername.trim())
+          .single();
+
+        if (profileError || !profileData?.email) {
+          console.log('Username not found or no email associated');
           Alert.alert(
             t('Login Failed'),
-            t('Invalid email or password. Please try again.'),
+            t('Username not found. Please check your username or try logging in with your email.'),
             [{ text: t('ok') }]
           );
-        } else if (error.message?.includes('Network request failed')) {
+          return;
+        }
+
+        // Now login with the email
+        console.log('Found email for username, attempting login with:', profileData.email);
+        const result = await supabase.auth.signInWithPassword({
+          email: profileData.email,
+          password: password
+        });
+        loginData = result.data;
+        loginError = result.error;
+      }
+
+      if (loginError) {
+        if (loginError.message === 'Invalid login credentials') {
+          Alert.alert(
+            t('Login Failed'),
+            t('Invalid credentials. Please check your username/email and password.'),
+            [{ text: t('ok') }]
+          );
+        } else if (loginError.message === 'Email not confirmed' || 
+                   loginError.code === 'email_not_confirmed') {
+          Alert.alert(
+            t('emailNotConfirmed'),
+            t('emailNotConfirmedMessage'),
+            [{ text: t('ok') }]
+          );
+        } else if (loginError.message?.includes('Network request failed')) {
           Alert.alert(
             t('Connection Error'),
             t('Unable to connect to the server. Please check your internet connection.'),
@@ -154,11 +206,31 @@ const LoginScreen = ({ navigation }) => {
         return;
       }
 
-      // Login successful
-      console.log('Login successful:', data);
-      console.log('User session:', data.session);
-      console.log('User:', data.user);
-      
+      // Check if account is pending deletion
+      if (loginData?.user?.id) {
+        const pendingDeletion = await checkPendingDeletion(loginData.user.id);
+        if (pendingDeletion?.pending_deletion) {
+          // Sign out the user immediately
+          await supabase.auth.signOut();
+          
+          Alert.alert(
+            t('accountPendingDeletion'),
+            t('accountPendingDeletionMessage'),
+            [{ text: t('ok') }]
+          );
+          return;
+        }
+      }
+
+      // Save push token to Supabase after successful login
+      try {
+        console.log('Saving push token after login...');
+        await notificationService.saveCurrentToken();
+      } catch (tokenError) {
+        console.error('Error saving push token after login:', tokenError);
+        // Don't fail login if token saving fails
+      }
+
       // Navigate back to the main screen after successful login
       console.log('Resetting navigation to Main screen...');
       navigation.reset({
@@ -168,7 +240,6 @@ const LoginScreen = ({ navigation }) => {
       console.log('Navigation reset completed');
 
     } catch (error) {
-      console.error('Login error:', error);
       
       // Handle network errors specifically
       if (error.message?.includes('Network request failed')) {
@@ -218,6 +289,17 @@ const LoginScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.browseButtonContainer}>
+          <TouchableOpacity 
+            style={[styles.browseButton, { backgroundColor: colors.primary, shadowColor: colors.shadow }]} 
+            onPress={() => navigation.navigate('Main')}
+            accessibilityLabel={t('browseProducts')}
+          >
+            <Ionicons name="browsers-outline" size={20} color={colors.headerText} />
+            <Text style={[styles.browseButtonText, { color: colors.headerText }]}>{t('browseProducts')}</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <KeyboardAvoidingView
             style={[styles.container, { backgroundColor: colors.background }]}
@@ -234,13 +316,20 @@ const LoginScreen = ({ navigation }) => {
               <View style={styles.innerContainer}>
                 <View style={styles.logoContainer}>
                   <Image
-                    source={require('../../assets/S.F.U.png')}
+                    key={currentTheme} // Force re-render when theme changes
+                    source={currentTheme === THEME_TYPES.LIGHT 
+                      ? require('../../assets/S.F.U.png')
+                      : require('../../assets/S.F.U2.png')
+                    }
                     style={styles.logo}
                     resizeMode="contain"
                     accessibilityLabel={t('appLogo')}
                   />
                 </View>
-                <Text style={[styles.title, { color: colors.primary }]}>{t('appTitle')}</Text>
+                <View style={styles.titleContainer}>
+                  <Text style={[styles.title, { color: currentTheme === THEME_TYPES.LIGHT ? '#000000' : '#FFFFFF' }]}>u-Shop </Text>
+                  <Text style={[styles.title, { color: colors.primary }]}>SFU</Text>
+                </View>
 
                 {error ? (
                   <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
@@ -248,27 +337,39 @@ const LoginScreen = ({ navigation }) => {
 
                 <TextInput
                   style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
-                  placeholder={t('emailPlaceholder')}
+                  placeholder={t('emailOrUsernamePlaceholder')}
                   placeholderTextColor={colors.placeholder}
-                  value={email}
-                  onChangeText={setEmail}
+                  value={emailOrUsername}
+                  onChangeText={setEmailOrUsername}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  keyboardType="email-address"
-                  accessibilityLabel={t('emailInput')}
+                  keyboardType="default"
+                  accessibilityLabel={t('emailOrUsernameInput')}
                 />
 
-                <TextInput
-                  style={[styles.input, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
-                  placeholder={t('passwordPlaceholder')}
-                  placeholderTextColor={colors.placeholder}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  accessibilityLabel={t('passwordInput')}
-                />
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={[styles.input, styles.passwordInput, { backgroundColor: colors.inputBackground, borderColor: colors.inputBorder, color: colors.text }]}
+                    placeholder={t('passwordPlaceholder')}
+                    placeholderTextColor={colors.placeholder}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    accessibilityLabel={t('passwordInput')}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeButton}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Ionicons 
+                      name={showPassword ? 'eye-off' : 'eye'} 
+                      size={20} 
+                      color={colors.textSecondary} 
+                    />
+                  </TouchableOpacity>
+                </View>
 
                 <TouchableOpacity
                   style={[
@@ -342,11 +443,15 @@ const styles = StyleSheet.create({
     height: 300,
     marginTop: 20, // Add small margin from top
   },
+  titleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 30,
+  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 30,
   },
   input: {
     paddingHorizontal: 15,
@@ -359,6 +464,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+  },
+  passwordContainer: {
+    position: 'relative',
+  },
+  passwordInput: {
+    paddingRight: 50, // Space for eye button
+  },
+  eyeButton: {
+    position: 'absolute',
+    right: 15,
+    top: '28%',
+    transform: [{ translateY: -10 }],
+    padding: 5,
   },
   loginButton: {
     padding: 15,
@@ -402,6 +520,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 3,
     elevation: 3,
+  },
+  browseButtonContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 80 : 20,
+    left: 20,
+    zIndex: 1000,
+  },
+  browseButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 25,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+    gap: 8,
+  },
+  browseButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

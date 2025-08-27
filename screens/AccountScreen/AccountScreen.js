@@ -12,15 +12,22 @@ import {
   Modal,
   SafeAreaView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
+import BlockedUsersScreen from '../BlockedUsersScreen/BlockedUsersScreen';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { useTheme } from '../../context/ThemeContext';
 import supabase from '../../services/supabaseConfig';
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import LoadingState from '../../components/LoadingState/LoadingState';
 import RetryView from '../../components/RetryView/RetryView';
+import { checkAuthenticationWithFallback } from '../../utils/authUtils';
+import { requestAccountDeletion } from '../../services/accountDeletionService';
+import { checkNetworkConnection } from '../../utils/networkUtils';
+import notificationService from '../../services/notificationService';
+import { deleteProduct } from '../../services/productService';
 
 const cleanStorageUrl = (url) => {
   if (!url) return null;
@@ -119,8 +126,13 @@ const AccountScreen = ({ navigation, route }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isLanguageModalVisible, setIsLanguageModalVisible] = useState(false);
   const [isThemeModalVisible, setIsThemeModalVisible] = useState(false);
+  const [isNotificationModalVisible, setIsNotificationModalVisible] = useState(false);
+  const [messageNotificationsEnabled, setMessageNotificationsEnabled] = useState(true);
   const [loadingProductIds, setLoadingProductIds] = useState([]);
   const [error, setError] = useState(null);
+  const [isNetworkError, setIsNetworkError] = useState(false);
+  const [showBlockedUsersModal, setShowBlockedUsersModal] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   // Toggle loading state for a specific product
   const setProductLoading = (productId, isLoading) => {
@@ -174,7 +186,26 @@ const AccountScreen = ({ navigation, route }) => {
   const fetchUserData = async () => {
     try {
       setError(null);
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      setIsNetworkError(false);
+      
+      const { user, isNetworkError: networkError, error: userError } = await checkAuthenticationWithFallback();
+      
+      if (networkError) {
+        // Network error - show network error UI
+        console.log('Network error during auth check:', userError);
+        setIsNetworkError(true);
+        setUserData({
+          username: '',
+          email: '',
+          profilePicture: null,
+          dorm: '',
+          phone_number: '',
+          allow_phone_contact: false
+        });
+        setUserId(null);
+        setIsLoading(false);
+        return;
+      }
       
       // Handle auth errors gracefully
       if (userError) {
@@ -193,7 +224,7 @@ const AccountScreen = ({ navigation, route }) => {
       }
       
       if (!user) {
-        // User is not logged in, show sign-in prompt
+        // User is not logged in, show sign-in prompt immediately
         setUserData({
           username: '',
           email: '',
@@ -210,32 +241,13 @@ const AccountScreen = ({ navigation, route }) => {
       if (user) {
         setUserId(user.id);
         
+        // Don't set any user data until we have complete profile information
+        // This prevents showing partial/empty data while loading
+        
         // Check Supabase storage URL for debugging
         try {
           const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl('test.jpg');
         } catch (storageError) {
-        }
-        
-        // First check if we can get data from user metadata
-        if (user.user_metadata) {
-          const metadata = user.user_metadata;
-          
-          // Check for avatar_url in metadata
-          if (metadata.avatar_url) {
-          }
-          
-          // Set some initial data from metadata
-          const initialData = {
-            username: metadata.username || metadata.name || '',
-            email: user.email || '',
-            dorm: metadata.dorm || '',
-            phone_number: metadata.phone_number || '',
-            profilePicture: metadata.avatar_url || null,
-            allow_phone_contact: metadata.allow_phone_contact || false
-          };
-          
-          // Set this initial data
-          setUserData(initialData);
         }
         
         // Fetch user profile from the profiles table with better error logging
@@ -270,9 +282,24 @@ const AccountScreen = ({ navigation, route }) => {
         }
         
         if (profileData) {
+          console.log('Profile data loaded:', {
+            id: profileData.id,
+            username: profileData.username,
+            avatar_url: profileData.avatar_url,
+            email: profileData.email
+          });
           handleProfileData(profileData, user.email, user.user_metadata);
         } else {
           console.log('No profile data found for user:', user.id);
+          // Set minimal data if no profile exists
+          setUserData({
+            username: user.user_metadata?.username || user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+            email: user.email || '',
+            profilePicture: null,
+            dorm: '',
+            phone_number: '',
+            allow_phone_contact: false
+          });
         }
       }
     } catch (error) {
@@ -310,59 +337,19 @@ const AccountScreen = ({ navigation, route }) => {
       usernameValue = userMetadata.name + (userMetadata.surname ? ' ' + userMetadata.surname : '');
     }
     
-    // COMPLETELY REVISED PROFILE PICTURE HANDLING
+    // Profile picture handling
     let profilePicValue = null;
     
-    // Always try to get Supabase URLs for avatar files
-    const getSupabaseAvatarUrl = (filename) => {
-      if (!filename) return null;
-      
-      // If it's already a complete URL, use it
-      if (filename.startsWith('http')) {
-        return filename;
-      }
-      
-      // If it's already a Supabase URL (contains the storage path), extract just the filename
-      if (filename.includes('avatars/')) {
-        const parts = filename.split('avatars/');
-        if (parts.length > 1) {
-          filename = parts[1];
-        }
-      }
-      
-      // Otherwise, get the public URL from Supabase
-      try {
-        const { data } = supabase.storage
-          .from('avatars')
-          .getPublicUrl(filename);
-        
-        if (data && data.publicUrl) {
-          return data.publicUrl;
-        }
-      } catch (e) {
-        console.log('Error generating Supabase URL:', e);
-      }
-      return null;
-    };
-    
-    // Only try to get a Supabase URL if the avatar_url field actually has a value
+    // Check if avatar_url exists in profile data
     if (profileData.avatar_url) {
-      // Check if it's already a complete URL
-      if (profileData.avatar_url.startsWith('http')) {
-        profilePicValue = profileData.avatar_url;
-      } else {
-      profilePicValue = getSupabaseAvatarUrl(profileData.avatar_url);
-      }
+      profilePicValue = profileData.avatar_url;
+      console.log('Profile photo loaded successfully:', profilePicValue);
     }
     
     // If no URL from profile, try metadata
     if (!profilePicValue && userMetadata && userMetadata.avatar_url) {
-      // Check if it's already a complete URL
-      if (userMetadata.avatar_url.startsWith('http')) {
-        profilePicValue = userMetadata.avatar_url;
-      } else {
-      profilePicValue = getSupabaseAvatarUrl(userMetadata.avatar_url);
-      }
+      profilePicValue = userMetadata.avatar_url;
+      console.log('Profile photo loaded from metadata:', profilePicValue);
     }
     
     
@@ -510,6 +497,35 @@ const AccountScreen = ({ navigation, route }) => {
     }
   }, [userId]);
 
+  // Retry function specifically for network errors
+  const handleNetworkRetry = useCallback(async () => {
+    try {
+      
+      setIsNetworkError(false);
+      setIsLoading(true);
+      setError(null);
+      
+      // Just check network and retry user data fetch
+      const isConnected = await checkNetworkConnection();
+      if (!isConnected) {
+        setIsNetworkError(true);
+        setIsLoading(false);
+        return;
+      }
+      
+      // If network is back, try to fetch user data
+      await fetchUserData();
+      if (userId) {
+        await fetchUserProducts();
+      }
+
+    } catch (error) {
+      console.error('AccountScreen: Network retry failed:', error);
+      setIsNetworkError(true);
+      setIsLoading(false);
+    }
+  }, [userId, fetchUserData, fetchUserProducts]);
+
   // Load saved language preference
   useEffect(() => {
     const loadSavedLanguage = async () => {
@@ -526,6 +542,22 @@ const AccountScreen = ({ navigation, route }) => {
     loadSavedLanguage();
   }, [i18n]);
 
+  // Load notification preferences
+  useEffect(() => {
+    const loadNotificationPreferences = async () => {
+      try {
+        const savedNotificationPreference = await AsyncStorage.getItem('messageNotificationsEnabled');
+        if (savedNotificationPreference !== null) {
+          setMessageNotificationsEnabled(savedNotificationPreference === 'true');
+        }
+      } catch (error) {
+        console.error('Error loading notification preferences:', error);
+      }
+    };
+
+    loadNotificationPreferences();
+  }, []);
+
   // Initial Data Load
   useEffect(() => {
     const initializeData = async () => {
@@ -536,6 +568,8 @@ const AccountScreen = ({ navigation, route }) => {
         // We'll handle product fetching in a separate useEffect
       } catch (error) {
         console.error('Initial load error:', error);
+        // Even if there's an error, we should stop loading
+        setIsLoading(false);
       } finally {
         setIsLoading(false);
       }
@@ -546,7 +580,6 @@ const AccountScreen = ({ navigation, route }) => {
     // Subscribe to auth changes but don't navigate
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
-        console.log('Auth state changed to signed out');
         // Navigation is handled by App.js auth state
       }
     });
@@ -595,7 +628,6 @@ const AccountScreen = ({ navigation, route }) => {
                       text: t('logout'),
           onPress: async () => {
             try {
-              console.log('Logging out user...');
               await supabase.auth.signOut();
               
               // Clear local state
@@ -616,7 +648,6 @@ const AccountScreen = ({ navigation, route }) => {
                 routes: [{ name: 'Main' }],
               });
               
-              console.log('Logout completed successfully');
             } catch (error) {
               console.error('Logout error:', error);
               Alert.alert(
@@ -627,6 +658,202 @@ const AccountScreen = ({ navigation, route }) => {
             }
           },
           style: 'destructive'
+        }
+      ]
+    );
+  };
+
+  // Delete Account Handler
+  const handleDeleteAccount = async () => {
+    Alert.alert(
+      t('confirmAccountDeletion'),
+      t('accountDeletionWarning'),
+      [
+        {
+          text: t('cancel'),
+          style: 'cancel'
+        },
+        {
+          text: t('deleteAccount'),
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              
+              // Show loading state
+              setIsDeletingAccount(true);
+              
+              // Step 1: Delete all user's products and their images
+              const { data: userProducts, error: fetchError } = await supabase
+                .from('products')
+                .select('id, main_image_url, images')
+                .eq('seller_id', userId);
+              
+              if (fetchError) {
+                console.error('Error fetching user products:', fetchError);
+                // Don't throw error if no products found - this is normal
+                if (fetchError.code !== 'PGRST116') { // No rows returned
+                  throw fetchError;
+                }
+              }
+              
+              if (userProducts && userProducts.length > 0) {
+                // Delete all product images from storage
+                for (const product of userProducts) {
+                  const imagesToDelete = [
+                    ...(product.main_image_url ? [product.main_image_url] : []),
+                    ...(product.images || [])
+                  ];
+                  
+                  for (const imagePath of imagesToDelete) {
+                    if (imagePath) {
+                      const { error: deleteImageError } = await supabase.storage
+                        .from('product_images')
+                        .remove([imagePath]);
+                        
+                      if (deleteImageError) {
+                        console.error('Error deleting product image:', deleteImageError);
+                      }
+                    }
+                  }
+                }
+                
+                // Delete all products from database
+                const { error: deleteProductsError } = await supabase
+                  .from('products')
+                  .delete()
+                  .eq('seller_id', userId);
+                  
+                if (deleteProductsError) {
+                  console.error('Error deleting products:', deleteProductsError);
+                  throw deleteProductsError;
+                }
+                
+              } else {
+              }
+              
+              // Step 2: Delete all user's buy orders and their images
+              const { data: userBuyOrders, error: fetchBuyOrdersError } = await supabase
+                .from('buy_orders')
+                .select('id, main_image_url, images')
+                .eq('user_id', userId);
+              
+              if (fetchBuyOrdersError) {
+                console.error('Error fetching user buy orders:', fetchBuyOrdersError);
+                // Don't throw error if no buy orders found - this is normal
+                if (fetchBuyOrdersError.code !== 'PGRST116') { // No rows returned
+                  throw fetchBuyOrdersError;
+                }
+              }
+              
+              if (userBuyOrders && userBuyOrders.length > 0) {
+                // Delete all buy order images from storage
+                for (const buyOrder of userBuyOrders) {
+                  const imagesToDelete = [
+                    ...(buyOrder.main_image_url ? [buyOrder.main_image_url] : []),
+                    ...(buyOrder.images || [])
+                  ];
+                  
+                  for (const imagePath of imagesToDelete) {
+                    if (imagePath) {
+                      const { error: deleteImageError } = await supabase.storage
+                        .from('buy-orders-images')
+                        .remove([imagePath]);
+                        
+                      if (deleteImageError) {
+                        console.error('Error deleting buy order image:', deleteImageError);
+                      }
+                    }
+                  }
+                }
+                
+                // Delete all buy orders from database
+                const { error: deleteBuyOrdersError } = await supabase
+                  .from('buy_orders')
+                  .delete()
+                  .eq('user_id', userId);
+                  
+                if (deleteBuyOrdersError) {
+                  console.error('Error deleting buy orders:', deleteBuyOrdersError);
+                  throw deleteBuyOrdersError;
+                }
+                
+              } else {
+              }
+              
+              // Step 3: Delete user's profile picture if exists
+              if (userData.profilePicture) {
+                const { error: deleteProfilePicError } = await supabase.storage
+                  .from('avatars')
+                  .remove([userData.profilePicture]);
+                  
+                if (deleteProfilePicError) {
+                  console.error('Error deleting profile picture:', deleteProfilePicError);
+                }
+              }
+              
+              // Step 4: Mark account for admin deletion (preserve email and username)
+
+              // Get user email for admin notification
+              const { data: { user } } = await supabase.auth.getUser();
+              const userEmail = user?.email;
+              
+              // Mark account for admin deletion (preserves email and username)
+              await requestAccountDeletion(userId, userEmail, userData?.username || 'Unknown User');
+              
+              // Step 5: Clear all local data and sign out
+              
+              // Clear AsyncStorage
+              try {
+                await AsyncStorage.clear();
+              } catch (error) {
+                console.error('Error clearing AsyncStorage:', error);
+              }
+              
+              // Sign out the user
+              await supabase.auth.signOut();
+              
+              
+              // Show success message
+              Alert.alert(
+                t('accountDeleted'),
+                t('accountDeletedMessage'),
+                [
+                  {
+                    text: t('ok'),
+                    onPress: () => {
+                      // Clear local state
+                      setUserData({
+                        username: '',
+                        email: '',
+                        profilePicture: null,
+                        dorm: '',
+                        phone_number: '',
+                        allow_phone_contact: false
+                      });
+                      setUserId(null);
+                      setUserProducts([]);
+                      
+                      // Navigate to home screen and prevent back navigation
+                      navigation.reset({
+                        index: 0,
+                        routes: [{ name: 'Main' }],
+                      });
+                    }
+                  }
+                ]
+              );
+              
+            } catch (error) {
+              console.error('Account deletion error:', error);
+              setIsDeletingAccount(false);
+              
+              Alert.alert(
+                t('deletionFailed'),
+                t('deletionFailedMessage'),
+                [{ text: t('ok') }]
+              );
+            }
+          }
         }
       ]
     );
@@ -763,13 +990,21 @@ const AccountScreen = ({ navigation, route }) => {
                   }
                 }
 
-                // 3. Delete the product record
-                const { error: deleteError } = await supabase
-                  .from('products')
-                  .delete()
-                  .eq('id', productId);
-
-                if (deleteError) throw deleteError;
+                // 3. Delete the product using the service function (hard delete)
+                await deleteProduct(productId);
+                
+                // 4. Trigger conversations refresh to update UI immediately
+                try {
+                  const { triggerConversationsRefresh } = await import('../../services/messageService');
+                  triggerConversationsRefresh();
+                  
+                  // Also emit a custom event for immediate UI update
+                  const { EventRegister } = await import('react-native-event-listeners');
+                  EventRegister.emit('PRODUCT_DELETED', { productId });
+                  console.log('Emitted PRODUCT_DELETED event from AccountScreen');
+                } catch (refreshError) {
+                  console.warn('Could not trigger conversations refresh:', refreshError);
+                }
 
                 // 4. Update local state
                 setUserProducts(prevProducts => 
@@ -842,15 +1077,42 @@ const AccountScreen = ({ navigation, route }) => {
                   }
                 }
 
-                // 3. Delete the buy order record
+                // 3. Use hard delete to save database space
                 const { error: deleteError } = await supabase
                   .from('buy_orders')
                   .delete()
                   .eq('id', orderId);
 
                 if (deleteError) throw deleteError;
+                
+                // 4. Update conversations to mark product as deleted
+                try {
+                  const { error: convError } = await supabase
+                    .from('conversations')
+                    .update({ product_deleted: true })
+                    .eq('product_id', orderId);
+                  
+                  if (convError && convError.code !== '42703') {
+                    console.warn('Could not update conversations for deleted buy order:', convError);
+                  } else {
+                    // Trigger conversations refresh to update UI immediately
+                    try {
+                      const { triggerConversationsRefresh } = await import('../../services/messageService');
+                      triggerConversationsRefresh();
+                      
+                      // Also emit a custom event for immediate UI update
+                      const { EventRegister } = await import('react-native-event-listeners');
+                      EventRegister.emit('PRODUCT_DELETED', { productId: orderId });
+                      console.log('Emitted PRODUCT_DELETED event from buy order deletion');
+                    } catch (refreshError) {
+                      console.warn('Could not trigger conversations refresh:', refreshError);
+                    }
+                  }
+                } catch (convError) {
+                  console.warn('Could not update conversations (column may not exist):', convError);
+                }
 
-                // 4. Update local state
+                // 5. Update local state
                 setUserProducts(prevProducts => 
                   prevProducts.filter(product => product.id !== orderId)
                 );
@@ -893,6 +1155,43 @@ const AccountScreen = ({ navigation, route }) => {
     setIsThemeModalVisible(false);
   };
 
+  // Notification Change Handler
+  const handleNotificationChange = async (enabled) => {
+    try {
+      setMessageNotificationsEnabled(enabled);
+      await AsyncStorage.setItem('messageNotificationsEnabled', enabled ? 'true' : 'false');
+      setIsNotificationModalVisible(false);
+    } catch (error) {
+      console.error('Error saving notification preference:', error);
+    }
+  };
+
+  // Test notification function
+  const testNotification = async () => {
+    try {
+      await notificationService.sendLocalNotification(
+        'Test Notification',
+        'This is a test notification from u-Shop SFU!',
+        { type: 'test' }
+      );
+      Alert.alert('Success', 'Test notification sent!');
+    } catch (error) {
+      console.error('Error sending test notification:', error);
+      Alert.alert('Error', 'Failed to send test notification');
+    }
+  };
+
+  // Test token saving function
+  const testTokenSaving = async () => {
+    try {
+      await notificationService.saveCurrentToken();
+      Alert.alert('Success', 'Push token saved to database!');
+    } catch (error) {
+      console.error('Error saving token:', error);
+      Alert.alert('Error', 'Failed to save push token');
+    }
+  };
+
 
 
   return (
@@ -903,6 +1202,22 @@ const AccountScreen = ({ navigation, route }) => {
     >
       {isLoading ? (
         <LoadingState message={t('loadingProfile')} />
+      ) : isNetworkError ? (
+        <View style={[styles.signInPrompt, { backgroundColor: colors.background }]}>
+          <View style={[styles.signInPromptContent, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+            <Ionicons name="wifi-outline" size={80} color={colors.error} />
+            <Text style={[styles.signInPromptTitle, { color: colors.text }]}>{t('noInternet')}</Text>
+            <Text style={[styles.signInPromptText, { color: colors.textSecondary }]}>
+              {t('checkConnection')}
+            </Text>
+            <TouchableOpacity
+              style={[styles.signInPromptButton, { backgroundColor: colors.primary }]}
+              onPress={handleNetworkRetry}
+            >
+              <Text style={[styles.signInPromptButtonText, { color: colors.headerText }]}>{t('retry')}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       ) : error ? (
         <RetryView 
           onRetry={handleRefresh}
@@ -923,7 +1238,8 @@ const AccountScreen = ({ navigation, route }) => {
                 colors={[colors.primary]}
                 tintColor={colors.primary}
                 title={t('Pull to refresh')}
-                progressViewOffset={50}
+                progressViewOffset={Platform.OS === 'ios' ? 100 : 80}
+                progressBackgroundColor={colors.background}
               />
             }
           >
@@ -936,6 +1252,13 @@ const AccountScreen = ({ navigation, route }) => {
                       <Image
                         source={{ uri: userData.profilePicture }}
                         style={styles.profileImage}
+                        onError={(e) => {
+                          console.error('Profile photo load error:', e.nativeEvent.error);
+                          console.error('Failed URL:', userData.profilePicture);
+                        }}
+                        onLoad={() => {
+                          console.log('Profile photo loaded successfully:', userData.profilePicture);
+                        }}
                       />
                     ) : (
                       <View style={[styles.profileImage, styles.profileImageFallback, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -991,10 +1314,12 @@ const AccountScreen = ({ navigation, route }) => {
                 </View>
               </View>
             ) : (
-              <View style={[styles.signInPrompt, { backgroundColor: colors.surface }]}>
-                <View style={[styles.signInPromptContent, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}>
+              <View style={[styles.signInPrompt, { backgroundColor: colors.background }]}>
+                <View style={[styles.signInPromptContent, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
                   <View style={styles.signInIconContainer}>
-                    <Ionicons name="person-circle-outline" size={100} color={colors.primary} />
+                    <View style={[styles.signInIconBackground, { backgroundColor: colors.primary + '20' }]}>
+                      <Ionicons name="person-circle-outline" size={80} color={colors.primary} />
+                    </View>
                   </View>
                   <Text style={[styles.signInPromptTitle, { color: colors.text }]}>{t('welcomeToDormMarketplace')}</Text>
                   <Text style={[styles.signInPromptText, { color: colors.textSecondary }]}>
@@ -1009,11 +1334,11 @@ const AccountScreen = ({ navigation, route }) => {
                       <Text style={[styles.signInPromptButtonText, { color: colors.headerText }]}>{t('signIn')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.signUpPromptButton, { backgroundColor: colors.secondary, shadowColor: colors.shadow }]}
+                      style={[styles.signUpPromptButton, { backgroundColor: colors.surface, borderColor: colors.primary, borderWidth: 1 }]}
                       onPress={() => navigation.navigate('SignUp')}
                     >
-                      <Ionicons name="person-add-outline" size={20} color={colors.headerText} />
-                      <Text style={[styles.signUpPromptButtonText, { color: colors.headerText }]}>{t('createAccount')}</Text>
+                      <Ionicons name="person-add-outline" size={20} color={colors.primary} />
+                      <Text style={[styles.signUpPromptButtonText, { color: colors.primary }]}>{t('createAccount')}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -1057,7 +1382,80 @@ const AccountScreen = ({ navigation, route }) => {
                    currentTheme === 'dark' ? t('darkTheme') : t('systemTheme')}
                 </Text>
               </TouchableOpacity>
+
+              {/* Message Notifications Setting Item */}
+              <TouchableOpacity
+                style={[styles.settingItem, { borderBottomColor: colors.border }]}
+                onPress={() => setIsNotificationModalVisible(true)}
+              >
+                <View style={styles.settingContent}>
+                  <Ionicons 
+                    name="notifications-outline" 
+                    size={24} 
+                    color={colors.primary} 
+                    style={styles.settingIcon} 
+                  />
+                  <Text style={[styles.settingText, { color: colors.text }]}>{t('Message Notifications')}</Text>
+                </View>
+                <Text style={[styles.settingValue, { color: colors.textSecondary }]}>
+                  {messageNotificationsEnabled ? t('enabled') : t('disabled')}
+                </Text>
+              </TouchableOpacity>
+
+
             </View>
+
+            {/* Account Management Section - Only show if logged in */}
+            {userId && (
+              <View style={[styles.section, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('Account Management')}</Text>
+                
+                {/* Blocked Users */}
+                <TouchableOpacity
+                  style={[styles.settingItem, { borderBottomColor: colors.border }]}
+                  onPress={() => setShowBlockedUsersModal(true)}
+                >
+                  <View style={styles.settingContent}>
+                    <Ionicons 
+                      name="people-outline" 
+                      size={24} 
+                      color={colors.primary} 
+                      style={styles.settingIcon} 
+                    />
+                    <Text style={[styles.settingText, { color: colors.text }]}>{t('blockedUsers')}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+                
+                {/* Delete Account */}
+                <TouchableOpacity
+                  style={[
+                    styles.settingItem, 
+                    { borderBottomColor: colors.border },
+                    isDeletingAccount && { opacity: 0.5 }
+                  ]}
+                  onPress={handleDeleteAccount}
+                  disabled={isDeletingAccount}
+                >
+                  <View style={styles.settingContent}>
+                    {isDeletingAccount ? (
+                      <ActivityIndicator size="small" color={colors.error} style={styles.settingIcon} />
+                    ) : (
+                      <Ionicons 
+                        name="trash-outline" 
+                        size={24} 
+                        color={colors.error} 
+                        style={styles.settingIcon} 
+                      />
+                    )}
+                    <Text style={[styles.settingText, { color: colors.error }]}>
+                      {isDeletingAccount ? t('deletingAccount') : t('Delete Account')}
+                    </Text>
+                  </View>
+                  {!isDeletingAccount && <Ionicons name="chevron-forward" size={20} color={colors.error} />}
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* My Products Section - Only show if logged in */}
             {userId && (
@@ -1296,6 +1694,171 @@ const AccountScreen = ({ navigation, route }) => {
                   </TouchableOpacity>
                 </View>
               </View>
+            </Modal>
+
+            {/* Notification Settings Modal */}
+            <Modal
+              visible={isNotificationModalVisible}
+              animationType="fade"
+              transparent={true}
+              onRequestClose={() => setIsNotificationModalVisible(false)}
+            >
+              <View style={[styles.modalContainer, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+                <View style={[styles.modalContent, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>{t('Message Notifications')}</Text>
+                  
+                  <TouchableOpacity 
+                    style={[
+                      styles.languageOption,
+                      { borderBottomColor: colors.border },
+                      messageNotificationsEnabled && { backgroundColor: colors.primary + '20' }
+                    ]}
+                    onPress={() => handleNotificationChange(true)}
+                  >
+                    <View style={styles.themeOptionContent}>
+                      <Ionicons name="notifications" size={24} color={colors.primary} />
+                      <Text style={[
+                        styles.languageOptionText,
+                        { color: colors.text },
+                        messageNotificationsEnabled && { color: colors.primary, fontWeight: 'bold' }
+                      ]}>
+                        {t('enabled')}
+                      </Text>
+                    </View>
+                    {messageNotificationsEnabled && (
+                      <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[
+                      styles.languageOption,
+                      { borderBottomColor: colors.border },
+                      !messageNotificationsEnabled && { backgroundColor: colors.primary + '20' }
+                    ]}
+                    onPress={() => handleNotificationChange(false)}
+                  >
+                    <View style={styles.themeOptionContent}>
+                      <Ionicons name="notifications-off" size={24} color={colors.primary} />
+                      <Text style={[
+                        styles.languageOptionText,
+                        { color: colors.text },
+                        !messageNotificationsEnabled && { color: colors.primary, fontWeight: 'bold' }
+                      ]}>
+                        {t('disabled')}
+                      </Text>
+                    </View>
+                    {!messageNotificationsEnabled && (
+                      <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.testButton, { backgroundColor: colors.primary }]}
+                    onPress={testNotification}
+                  >
+                    <Text style={[styles.testButtonText, { color: colors.headerText }]}>Test Notification</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.testButton, { backgroundColor: colors.secondary }]}
+                    onPress={testTokenSaving}
+                  >
+                    <Text style={[styles.testButtonText, { color: colors.headerText }]}>Save Token to DB</Text>
+                  </TouchableOpacity>
+                  
+                                       <TouchableOpacity
+                       style={[styles.testButton, { backgroundColor: colors.error }]}
+                       onPress={async () => {
+                         try {
+                           await notificationService.saveCurrentToken();
+                           Alert.alert('Success', 'Token saved to database!');
+                         } catch (error) {
+                           Alert.alert('Error', 'Failed to save token');
+                         }
+                       }}
+                     >
+                       <Text style={[styles.testButtonText, { color: colors.headerText }]}>Force Save Token</Text>
+                     </TouchableOpacity>
+                                            <TouchableOpacity
+                         style={[styles.testButton, { backgroundColor: colors.secondary }]}
+                         onPress={async () => {
+                           try {
+                             await notificationService.activateAllTokens();
+                             Alert.alert('Success', 'All tokens activated!');
+                           } catch (error) {
+                             Alert.alert('Error', 'Failed to activate tokens');
+                           }
+                         }}
+                       >
+                         <Text style={[styles.testButtonText, { color: colors.headerText }]}>Activate All Tokens</Text>
+                       </TouchableOpacity>
+                       <TouchableOpacity
+                         style={[styles.testButton, { backgroundColor: colors.primary }]}
+                         onPress={async () => {
+                           try {
+                             // Test message notification
+                             const { data, error } = await supabase.functions.invoke('send-push-notification', {
+                               body: {
+                                 targetUserId: 'd20c009c-a14d-4cf2-a64d-af377dc608b6', // Replace with actual user ID
+                                 title: 'Test Message Notification',
+                                 body: 'This is a test message notification',
+                                 data: {
+                                   type: 'message',
+                                   conversationId: 'test-conversation',
+                                   otherUserId: 'test-sender',
+                                   messageContent: 'Test message'
+                                 }
+                               }
+                             });
+                             
+                             if (error) {
+                               Alert.alert('Error', `Failed to send test notification: ${error.message}`);
+                             } else {
+                               Alert.alert('Success', `Test notification sent: ${JSON.stringify(data)}`);
+                             }
+                           } catch (error) {
+                             Alert.alert('Error', `Failed to send test notification: ${error.message}`);
+                           }
+                         }}
+                       >
+                         <Text style={[styles.testButtonText, { color: colors.headerText }]}>Test Message Notification</Text>
+                       </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.cancelButton}
+                    onPress={() => setIsNotificationModalVisible(false)}
+                  >
+                    <Text style={[styles.cancelButtonText, { color: colors.textSecondary }]}>{t('cancel')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+
+            {/* Blocked Users Modal */}
+            <Modal
+              visible={showBlockedUsersModal}
+              animationType="slide"
+              presentationStyle="pageSheet"
+              onRequestClose={() => setShowBlockedUsersModal(false)}
+            >
+              <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+                <View style={{ flex: 1 }}>
+                  <BlockedUsersScreen />
+                </View>
+                <TouchableOpacity
+                  style={{
+                    position: 'absolute',
+                    top: Platform.OS === 'ios' ? 10 : 20,
+                    right: 20,
+                    zIndex: 1000,
+                    padding: 10,
+                  }}
+                  onPress={() => setShowBlockedUsersModal(false)}
+                >
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </TouchableOpacity>
+              </SafeAreaView>
             </Modal>
           </ScrollView>
         </SafeAreaView>
@@ -1550,6 +2113,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  testButton: {
+    marginTop: 15,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  testButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
   settingValue: {
     fontSize: 16,
   },
@@ -1673,24 +2246,38 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   signInPrompt: {
-    paddingTop: Platform.OS === 'ios' ? 50 : 40,
-    paddingBottom: 60,
+    paddingTop: Platform.OS === 'ios' ? 10 : 5,
+    paddingBottom: 20,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 400,
+    minHeight: 500,
   },
   signInPromptContent: {
     alignItems: 'center',
     paddingVertical: 40,
+    paddingHorizontal: 30,
     width: '100%',
+    borderRadius: 20,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   signInIconContainer: {
-    marginBottom: 30,
+    marginBottom: 0,
     alignItems: 'center',
   },
+  signInIconBackground: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
   signInPromptTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     marginTop: 20,
     marginBottom: 10,
@@ -1703,15 +2290,14 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   signInButtonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: 'column',
     width: '100%',
     marginTop: 30,
     gap: 15,
   },
   signInPromptButton: {
     paddingHorizontal: 25,
-    paddingVertical: 15,
+    paddingVertical: 16,
     borderRadius: 25,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -1720,7 +2306,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    flex: 1,
     justifyContent: 'center',
   },
   signInPromptButtonText: {
@@ -1729,7 +2314,7 @@ const styles = StyleSheet.create({
   },
   signUpPromptButton: {
     paddingHorizontal: 25,
-    paddingVertical: 15,
+    paddingVertical: 16,
     borderRadius: 25,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -1738,7 +2323,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    flex: 1,
     justifyContent: 'center',
   },
   signUpPromptButtonText: {

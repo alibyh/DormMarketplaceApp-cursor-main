@@ -1,108 +1,264 @@
 import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import supabase from './supabaseConfig';
 
-// Configure notifications defaults
+// Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
 });
 
-// Register for push notifications
-export const registerForPushNotifications = async () => {
-  let token;
-  
-  if (Constants.isDevice) {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    
-    if (finalStatus !== 'granted') {
-      console.log('Failed to get push token for push notification!');
-      return null;
-    }
-    
-    token = (await Notifications.getExpoPushTokenAsync({
-      projectId: Constants.expoConfig?.extra?.eas?.projectId,
-    })).data;
-  } else {
-    //console.log('Must use physical device for push notifications');
+class NotificationService {
+  constructor() {
+    this.expoPushToken = null;
+    this.notificationListener = null;
+    this.responseListener = null;
+    this.isInitialized = false;
   }
 
-  if (Platform.OS === 'android') {
-    Notifications.setNotificationChannelAsync('default', {
-      name: 'default',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: '#FF5722',
+  // Initialize the notification service
+  async initialize() {
+    if (this.isInitialized) return;
+
+    try {
+      // Request permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+
+        return false;
+      }
+
+      // Get the token
+      if (Device.isDevice) {
+        const token = await Notifications.getExpoPushTokenAsync({
+          projectId: 'acd807d0-6af5-4577-9ade-b19c1e81999d', // Your Expo project ID
+        });
+        this.expoPushToken = token.data;
+
+        // Save token to AsyncStorage
+        await AsyncStorage.setItem('expoPushToken', this.expoPushToken);
+
+        // Save token to Supabase
+        await this.saveTokenToSupabase(this.expoPushToken);
+      } else {
+      }
+
+      // Set up notification listeners
+      this.setupNotificationListeners();
+
+      this.isInitialized = true;
+      return true;
+    } catch (error) {
+      console.error('Error initializing notifications:', error);
+      return false;
+    }
+  }
+
+  // Save push token to Supabase
+  async saveTokenToSupabase(token) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // First, check if this token already exists for this user
+      const { data: existingToken } = await supabase
+        .from('user_push_tokens')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('push_token', token)
+        .single();
+
+      if (existingToken) {
+        // Token already exists, just update the timestamp
+        const { error } = await supabase
+          .from('user_push_tokens')
+          .update({
+            updated_at: new Date().toISOString(),
+            is_active: true
+          })
+          .eq('id', existingToken.id);
+
+        if (error) {
+          console.error('Error updating push token:', error);
+        } else {
+        }
+      } else {
+        // Token doesn't exist, insert new record
+        const { error } = await supabase
+          .from('user_push_tokens')
+          .insert({
+            user_id: user.id,
+            push_token: token,
+            device_type: Platform.OS,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          });
+
+        if (error) {
+          console.error('Error saving push token to Supabase:', error);
+        } else {
+        }
+      }
+    } catch (error) {
+      console.error('Error in saveTokenToSupabase:', error);
+    }
+  }
+
+  // Check if notifications are enabled for the user
+  async areNotificationsEnabled() {
+    try {
+      const value = await AsyncStorage.getItem('messageNotificationsEnabled');
+      return value !== 'false'; // Default to true if not set
+    } catch (error) {
+      console.error('Error checking notification preferences:', error);
+      return true; // Default to true on error
+    }
+  }
+
+  // Set up notification listeners
+  setupNotificationListeners() {
+    // Listen for incoming notifications when app is in foreground
+    this.notificationListener = Notifications.addNotificationReceivedListener(notification => {
+      this.handleForegroundNotification(notification);
+    });
+
+    // Listen for notification responses (when user taps notification)
+    this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      this.handleNotificationResponse(response);
     });
   }
 
-  return token;
-};
+  // Handle foreground notifications
+  handleForegroundNotification(notification) {
+    const { title, body, data } = notification.request.content;
+    
+    // You can show a custom in-app notification here
+    // For now, we'll just log it
+  }
 
-// Send a local notification for a new message
-export const sendMessageNotification = async (senderName, messageText) => {
-  // Check if notifications are enabled
-  const notificationsEnabled = await AsyncStorage.getItem('messageNotificationsEnabled');
-  if (notificationsEnabled === 'false') return;
-  
-  const truncatedMessage = messageText.length > 50 
-    ? `${messageText.substring(0, 47)}...` 
-    : messageText;
-  
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: `New message from ${senderName}`,
-      body: truncatedMessage,
-      data: { type: 'message' },
-    },
-    trigger: null, // Send immediately
-  });
-};
+  // Handle notification responses (when user taps notification)
+  handleNotificationResponse(response) {
+    const { title, body, data } = response.notification.request.content;
+    
+    // Handle navigation based on notification type
+    if (data?.type === 'message') {
+      // Navigate to chat screen
+      this.navigateToChat(data.conversationId, data.otherUserId);
+    }
+  }
 
-// Show notification for when a conversation is started
-export const sendNewConversationNotification = async (senderName) => {
-  // Check if notifications are enabled
-  const notificationsEnabled = await AsyncStorage.getItem('messageNotificationsEnabled');
-  if (notificationsEnabled === 'false') return;
-  
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'New Conversation',
-      body: `${senderName} has started a conversation with you`,
-      data: { type: 'conversation' },
-    },
-    trigger: null, // Send immediately
-  });
-};
+  // Navigate to chat screen (this will be called from the main app)
+  navigateToChat(conversationId, otherUserId) {
+    // This will be implemented in the main app component
+    // We'll use a callback or event system
+    if (global.navigationRef?.current) {
+      global.navigationRef.current.navigate('Chat', {
+        conversationId,
+        otherUserId,
+      });
+    }
+  }
 
-// Set notification badge count
-export const setBadgeCount = async (count) => {
-  await Notifications.setBadgeCountAsync(count);
-};
+  // Send a local notification (for testing)
+  async sendLocalNotification(title, body, data = {}) {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data,
+        sound: 'default',
+      },
+      trigger: null, // Send immediately
+    });
+  }
 
-// Enable/disable message notifications
-export const setMessageNotificationsEnabled = async (enabled) => {
-  await AsyncStorage.setItem('messageNotificationsEnabled', enabled ? 'true' : 'false');
-};
+  // Get the current push token
+  async getPushToken() {
+    if (!this.expoPushToken) {
+      this.expoPushToken = await AsyncStorage.getItem('expoPushToken');
+    }
+    return this.expoPushToken;
+  }
 
-// Check if message notifications are enabled
-export const areMessageNotificationsEnabled = async () => {
-  const value = await AsyncStorage.getItem('messageNotificationsEnabled');
-  return value !== 'false'; // Default to true if not set
-};
+  // Manually save token (useful when user logs in)
+  async saveCurrentToken() {
+    const token = await this.getPushToken();
+    if (token) {
+      try {
+        await this.saveTokenToSupabase(token);
+        
+        // Debug: Check if token was actually saved
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: savedTokens } = await supabase
+            .from('user_push_tokens')
+            .select('push_token, is_active')
+            .eq('user_id', user.id);
+        }
+      } catch (error) {
+        console.error('Error saving token:', error);
+      }
+    } else {
+      console.log('No token available to save');
+    }
+  }
 
-// Add a listener for handling notifications
-export const addNotificationListener = (callback) => {
-  const subscription = Notifications.addNotificationResponseReceivedListener(callback);
-  return subscription;
-}; 
+  // Activate all tokens for current user (useful for debugging)
+  async activateAllTokens() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await supabase
+        .from('user_push_tokens')
+        .update({ is_active: true })
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Error activating tokens:', error);
+      } else {
+      }
+    } catch (error) {
+      console.error('Error in activateAllTokens:', error);
+    }
+  }
+
+  // Update badge count
+  async setBadgeCount(count) {
+    await Notifications.setBadgeCountAsync(count);
+  }
+
+  // Clear all notifications
+  async clearAllNotifications() {
+    await Notifications.dismissAllNotificationsAsync();
+    await Notifications.setBadgeCountAsync(0);
+  }
+
+  // Clean up listeners
+  cleanup() {
+    if (this.notificationListener) {
+      Notifications.removeNotificationSubscription(this.notificationListener);
+    }
+    if (this.responseListener) {
+      Notifications.removeNotificationSubscription(this.responseListener);
+    }
+  }
+}
+
+// Create a singleton instance
+const notificationService = new NotificationService();
+
+export default notificationService; 

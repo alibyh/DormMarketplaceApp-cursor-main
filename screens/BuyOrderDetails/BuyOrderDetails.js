@@ -23,6 +23,7 @@ import { findOrCreateConversation } from '../../services/messageService';
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import { handleBuyOrderError } from '../../utils/buyOrderErrorHandler';
 import { checkNetworkConnection } from '../../utils/networkUtils';
+import { checkAuthenticationWithFallback } from '../../utils/authUtils';
 
 const getAvatarUrl = (url) => {
   if (!url) return null;
@@ -40,7 +41,7 @@ const BuyOrderDetails = ({ route, navigation }) => {
   const colors = getThemeColors();
   const { productId } = route.params;
   const [order, setOrder] = useState(null);
-  const [buyerName, setBuyerName] = useState('Unknown');
+  const [buyerName, setBuyerName] = useState(t('unknown'));
   const [isLoading, setIsLoading] = useState(true);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [orderImages, setOrderImages] = useState([]);
@@ -59,7 +60,7 @@ const BuyOrderDetails = ({ route, navigation }) => {
 
       const isConnected = await checkNetworkConnection();
       if (!isConnected) {
-        throw new Error('network');
+        throw new Error('No internet connection');
       }
 
 
@@ -148,9 +149,17 @@ const BuyOrderDetails = ({ route, navigation }) => {
       setOrderImages(processedImages);
 
     } catch (error) {
-      setError(error);
-      handleBuyOrderError(error, t, 'FETCH_ORDER');
-      navigation.goBack();
+      // Check if it's a network error
+      if (error.message?.includes('network') || 
+          error.message?.includes('No internet connection') ||
+          error.message?.includes('fetch') ||
+          error.message?.includes('timeout') ||
+          error.message?.includes('connection')) {
+        setError(new Error('Network error - please check your connection'));
+      } else {
+        setError(error);
+        handleBuyOrderError(error, t, 'FETCH_ORDER');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -169,8 +178,17 @@ const BuyOrderDetails = ({ route, navigation }) => {
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
+      try {
+        const { user, isNetworkError, error } = await checkAuthenticationWithFallback();
+        if (user) {
+          setCurrentUser(user);
+        }
+        // Don't show network errors for user check in buy order details
+        // Just silently fail and continue without user data
+      } catch (error) {
+        console.log('User check failed:', error);
+        // Continue without user data
+      }
     };
     getUser();
   }, []);
@@ -235,12 +253,22 @@ const BuyOrderDetails = ({ route, navigation }) => {
         return;
       }
 
-      const conversation = await findOrCreateConversation(order.user_id);
+      const productInfo = {
+        id: order.id,
+        name: order.name,
+        description: order.description,
+        dorm: order.dorm,
+        type: 'buy_order',
+        mainImage: orderImages[0]?.url || null,
+        totalImages: orderImages.length
+      };
+
+      console.log('Navigating to chat for buy order');
       
       navigation.navigate('Chat', {
-        conversationId: conversation.id,
         otherUserId: order.user_id,
-        otherUserName: buyerName
+        otherUserName: buyerName,
+        productInfo
       });
 
     } catch (error) {
@@ -333,7 +361,15 @@ const BuyOrderDetails = ({ route, navigation }) => {
         </View>
       ) : error ? (
         <View style={[styles.errorContainer, { backgroundColor: colors.background }]}>
-          <Text style={[styles.errorText, { color: colors.error }]}>{t('errorLoadingOrder')}</Text>
+          {error.message?.includes('Network error') ? (
+            <>
+              <Ionicons name="wifi-outline" size={80} color={colors.error} />
+              <Text style={[styles.errorText, { color: colors.error }]}>{t('noInternet')}</Text>
+              <Text style={[styles.errorDescription, { color: colors.textSecondary }]}>{t('checkConnection')}</Text>
+            </>
+          ) : (
+            <Text style={[styles.errorText, { color: colors.error }]}>{t('errorLoadingOrder')}</Text>
+          )}
           <TouchableOpacity 
             style={[styles.retryButton, { backgroundColor: colors.primary }]}
             onPress={fetchOrderDetails}
@@ -672,6 +708,12 @@ const styles = StyleSheet.create({
   },
   retryButtonText: {
     fontSize: 16,
+  },
+  errorDescription: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
   },
 });
 

@@ -19,6 +19,7 @@ import supabase from '../../services/supabaseConfig';
 import ErrorBoundaryWrapper from '../../components/ErrorBoundary/ErrorBoundaryWrapper';
 import { handleProductError } from '../../utils/productErrorHandler';
 import LoadingOverlay from '../../components/LoadingOverlay/LoadingOverlay';
+import { deleteProduct } from '../../services/productService';
 
 // Add these helper functions at the top of the file after imports
 const debugLog = (message, data = null) => {
@@ -435,13 +436,22 @@ const EditAdScreen = ({ navigation, route }) => {
                   }
                 }
 
-                // 3. Delete the product record
-                const { error: deleteError } = await supabase
-                  .from('products')
-                  .delete()
-                  .eq('id', productId);
-
-                if (deleteError) throw deleteError;
+                // 3. Delete the product using the service function (hard delete)
+                await deleteProduct(productId);
+                
+                // 4. Trigger conversations refresh to update UI immediately
+                try {
+                  const { triggerConversationsRefresh } = await import('../../services/messageService');
+                  triggerConversationsRefresh();
+                  console.log('Triggered conversations refresh after product deletion');
+                  
+                  // Also emit a custom event for immediate UI update
+                  const { EventRegister } = await import('react-native-event-listeners');
+                  EventRegister.emit('PRODUCT_DELETED', { productId });
+                  console.log('Emitted PRODUCT_DELETED event from EditAdScreen');
+                } catch (refreshError) {
+                  console.warn('Could not trigger conversations refresh:', refreshError);
+                }
 
                 // 4. Update local state
                 setUserProducts(prevProducts => 

@@ -18,7 +18,6 @@ export const createBuyOrder = async (orderData, imageFiles = []) => {
         dorm: orderData.dorm,
         user_id: user.id,
         status: 'active',
-        is_deleted: false,
         is_visible: true,
         created_at: new Date().toISOString()
       })
@@ -27,24 +26,34 @@ export const createBuyOrder = async (orderData, imageFiles = []) => {
 
     if (insertError) throw insertError;
 
-    // 2. Upload images
-    const uploadedUrls = await Promise.all(imageFiles.map(async (image, index) => {
-      const response = await fetch(image.uri);
-      const blob = await response.blob();
-      const fileName = `${order.id}/${Date.now()}_${index}.jpg`;
+    // 2. Upload images (optimized)
+    const uploadedUrls = [];
+    if (imageFiles.length > 0) {
+      const uploadPromises = imageFiles.map(async (image, index) => {
+        try {
+          const response = await fetch(image.uri);
+          const blob = await response.blob();
+          const fileName = `${order.id}/${Date.now()}_${index}.jpg`;
 
-      const { error: uploadError } = await supabase.storage
-        .from('buy-orders-images')
-        .upload(fileName, blob);
+          const { error: uploadError } = await supabase.storage
+            .from('buy-orders-images')
+            .upload(fileName, blob);
 
-      if (uploadError) throw uploadError;
+          if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('buy-orders-images')
-        .getPublicUrl(fileName);
+          const { data: { publicUrl } } = supabase.storage
+            .from('buy-orders-images')
+            .getPublicUrl(fileName);
 
-      return publicUrl;
-    }));
+          return publicUrl;
+        } catch (error) {
+          console.error(`Failed to upload image ${index}:`, error);
+          throw error;
+        }
+      });
+
+      uploadedUrls.push(...(await Promise.all(uploadPromises)));
+    }
 
     // 3. Update order with main image and additional images
     const { error: updateError } = await supabase
@@ -56,6 +65,24 @@ export const createBuyOrder = async (orderData, imageFiles = []) => {
       .eq('id', order.id);
 
     if (updateError) throw updateError;
+
+    // 4. Increment user's product count for buy orders
+    try {
+      const { error: countError } = await supabase
+        .from('profiles')
+        .update({ 
+          product_count: supabase.sql`COALESCE(product_count, 0) + 1` 
+        })
+        .eq('id', user.id);
+      
+      if (countError) {
+        console.warn('Failed to increment product count for buy order:', countError);
+        // Don't throw error here as buy order creation was successful
+      }
+    } catch (countError) {
+      console.warn('Failed to increment product count for buy order:', countError);
+      // Don't throw error here as buy order creation was successful
+    }
 
     return { data: order, error: null };
   } catch (error) {
