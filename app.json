@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.alibyh.DormMarketplaceApp",
-      "buildNumber": "4",
+      "buildNumber": "5",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Your location is used to deliver relevant ads.",
         "NSLocationAlwaysUsageDescription": "Your location is used to deliver relevant ads.",
@@ -57,10 +57,10 @@
         }
       ]
     ],
-    "owner": "alibyh5",
+    "owner": "alibyh6",
     "extra": {
       "eas": {
-        "projectId": "acd807d0-6af5-4577-9ade-b19c1e81999d"
+        "projectId": "b9355317-1a5b-4df9-967f-ec3b425294f6"
       }
     }
   }
