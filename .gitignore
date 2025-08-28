@@ -1,0 +1,4 @@
+build/
+ios/build/
+*.xcarchive
+*.ipa
