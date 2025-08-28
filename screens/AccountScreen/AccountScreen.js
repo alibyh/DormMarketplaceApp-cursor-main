@@ -282,12 +282,6 @@ const AccountScreen = ({ navigation, route }) => {
         }
         
         if (profileData) {
-          console.log('Profile data loaded:', {
-            id: profileData.id,
-            username: profileData.username,
-            avatar_url: profileData.avatar_url,
-            email: profileData.email
-          });
           handleProfileData(profileData, user.email, user.user_metadata);
         } else {
           console.log('No profile data found for user:', user.id);
@@ -343,13 +337,12 @@ const AccountScreen = ({ navigation, route }) => {
     // Check if avatar_url exists in profile data
     if (profileData.avatar_url) {
       profilePicValue = profileData.avatar_url;
-      console.log('Profile photo loaded successfully:', profilePicValue);
+
     }
     
     // If no URL from profile, try metadata
     if (!profilePicValue && userMetadata && userMetadata.avatar_url) {
       profilePicValue = userMetadata.avatar_url;
-      console.log('Profile photo loaded from metadata:', profilePicValue);
     }
     
     
@@ -376,7 +369,6 @@ const AccountScreen = ({ navigation, route }) => {
     
     // Check if it's a relative URL that needs the Supabase storage URL prefix
     if (url.startsWith('/') || (!url.startsWith('http') && !url.startsWith('data:'))) {
-      console.log('URL appears to be relative, might need the storage URL prefix');
       
       try {
         // Try to get the Supabase storage URL for this path
@@ -387,7 +379,6 @@ const AccountScreen = ({ navigation, route }) => {
             fullUrl = result.data.publicUrl;
           }
         } catch (storageError) {
-          console.log('Error getting public URL:', storageError);
         }
         
         if (fullUrl) {
@@ -1001,7 +992,7 @@ const AccountScreen = ({ navigation, route }) => {
                   // Also emit a custom event for immediate UI update
                   const { EventRegister } = await import('react-native-event-listeners');
                   EventRegister.emit('PRODUCT_DELETED', { productId });
-                  console.log('Emitted PRODUCT_DELETED event from AccountScreen');
+
                 } catch (refreshError) {
                   console.warn('Could not trigger conversations refresh:', refreshError);
                 }
@@ -1103,7 +1094,6 @@ const AccountScreen = ({ navigation, route }) => {
                       // Also emit a custom event for immediate UI update
                       const { EventRegister } = await import('react-native-event-listeners');
                       EventRegister.emit('PRODUCT_DELETED', { productId: orderId });
-                      console.log('Emitted PRODUCT_DELETED event from buy order deletion');
                     } catch (refreshError) {
                       console.warn('Could not trigger conversations refresh:', refreshError);
                     }
@@ -1166,31 +1156,7 @@ const AccountScreen = ({ navigation, route }) => {
     }
   };
 
-  // Test notification function
-  const testNotification = async () => {
-    try {
-      await notificationService.sendLocalNotification(
-        'Test Notification',
-        'This is a test notification from u-Shop SFU!',
-        { type: 'test' }
-      );
-      Alert.alert('Success', 'Test notification sent!');
-    } catch (error) {
-      console.error('Error sending test notification:', error);
-      Alert.alert('Error', 'Failed to send test notification');
-    }
-  };
 
-  // Test token saving function
-  const testTokenSaving = async () => {
-    try {
-      await notificationService.saveCurrentToken();
-      Alert.alert('Success', 'Push token saved to database!');
-    } catch (error) {
-      console.error('Error saving token:', error);
-      Alert.alert('Error', 'Failed to save push token');
-    }
-  };
 
 
 
@@ -1257,7 +1223,7 @@ const AccountScreen = ({ navigation, route }) => {
                           console.error('Failed URL:', userData.profilePicture);
                         }}
                         onLoad={() => {
-                          console.log('Profile photo loaded successfully:', userData.profilePicture);
+
                         }}
                       />
                     ) : (
@@ -1753,77 +1719,7 @@ const AccountScreen = ({ navigation, route }) => {
                     )}
                   </TouchableOpacity>
                   
-                  <TouchableOpacity 
-                    style={[styles.testButton, { backgroundColor: colors.primary }]}
-                    onPress={testNotification}
-                  >
-                    <Text style={[styles.testButtonText, { color: colors.headerText }]}>Test Notification</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.testButton, { backgroundColor: colors.secondary }]}
-                    onPress={testTokenSaving}
-                  >
-                    <Text style={[styles.testButtonText, { color: colors.headerText }]}>Save Token to DB</Text>
-                  </TouchableOpacity>
-                  
-                                       <TouchableOpacity
-                       style={[styles.testButton, { backgroundColor: colors.error }]}
-                       onPress={async () => {
-                         try {
-                           await notificationService.saveCurrentToken();
-                           Alert.alert('Success', 'Token saved to database!');
-                         } catch (error) {
-                           Alert.alert('Error', 'Failed to save token');
-                         }
-                       }}
-                     >
-                       <Text style={[styles.testButtonText, { color: colors.headerText }]}>Force Save Token</Text>
-                     </TouchableOpacity>
-                                            <TouchableOpacity
-                         style={[styles.testButton, { backgroundColor: colors.secondary }]}
-                         onPress={async () => {
-                           try {
-                             await notificationService.activateAllTokens();
-                             Alert.alert('Success', 'All tokens activated!');
-                           } catch (error) {
-                             Alert.alert('Error', 'Failed to activate tokens');
-                           }
-                         }}
-                       >
-                         <Text style={[styles.testButtonText, { color: colors.headerText }]}>Activate All Tokens</Text>
-                       </TouchableOpacity>
-                       <TouchableOpacity
-                         style={[styles.testButton, { backgroundColor: colors.primary }]}
-                         onPress={async () => {
-                           try {
-                             // Test message notification
-                             const { data, error } = await supabase.functions.invoke('send-push-notification', {
-                               body: {
-                                 targetUserId: 'd20c009c-a14d-4cf2-a64d-af377dc608b6', // Replace with actual user ID
-                                 title: 'Test Message Notification',
-                                 body: 'This is a test message notification',
-                                 data: {
-                                   type: 'message',
-                                   conversationId: 'test-conversation',
-                                   otherUserId: 'test-sender',
-                                   messageContent: 'Test message'
-                                 }
-                               }
-                             });
-                             
-                             if (error) {
-                               Alert.alert('Error', `Failed to send test notification: ${error.message}`);
-                             } else {
-                               Alert.alert('Success', `Test notification sent: ${JSON.stringify(data)}`);
-                             }
-                           } catch (error) {
-                             Alert.alert('Error', `Failed to send test notification: ${error.message}`);
-                           }
-                         }}
-                       >
-                         <Text style={[styles.testButtonText, { color: colors.headerText }]}>Test Message Notification</Text>
-                       </TouchableOpacity>
+
                   
                   <TouchableOpacity 
                     style={styles.cancelButton}
@@ -2191,7 +2087,7 @@ const styles = StyleSheet.create({
   headerButtons: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 15 : 10, // Reduced from 60/30 to 15/10
-    right: 5,
+    right: -10,
     flexDirection: 'column',
     alignItems: 'center',
     gap: 12, // Slightly reduced gap between buttons

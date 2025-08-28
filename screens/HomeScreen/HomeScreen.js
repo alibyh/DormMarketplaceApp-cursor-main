@@ -1146,7 +1146,7 @@ const HomeScreen = ({ navigation, route }) => {
                 style={[
                   styles.filterContainer,
                   selectedDormFilter !== 'all',
-                  { borderColor: colors.surface }
+                  { borderColor: colors.border }
                 ]}
                 onPress={() => setIsFilterModalVisible(true)}
               >

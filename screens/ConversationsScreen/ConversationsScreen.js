@@ -477,7 +477,11 @@ const ConversationsScreen = () => {
           debouncedFetchConversations(false);
         }
       )
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error('Conversation update channel error:', error);
+        }
+      });
 
       // Listen for specific conversation updates
   const conversationUpdateListener = EventRegister.addEventListener('CONVERSATION_UPDATED', async (data) => {

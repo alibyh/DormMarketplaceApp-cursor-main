@@ -7,8 +7,7 @@ import supabase from './supabaseConfig';
 // Configure notification behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
+    shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
   }),
@@ -43,10 +42,12 @@ class NotificationService {
 
       // Get the token
       if (Device.isDevice) {
+        console.log('Getting Expo push token...');
         const token = await Notifications.getExpoPushTokenAsync({
-          projectId: 'acd807d0-6af5-4577-9ade-b19c1e81999d', // Your Expo project ID
+          projectId: 'b9355317-1a5b-4df9-967f-ec3b425294f6', // Your Expo project ID
         });
         this.expoPushToken = token.data;
+        console.log('Expo push token received:', this.expoPushToken);
 
         // Save token to AsyncStorage
         await AsyncStorage.setItem('expoPushToken', this.expoPushToken);
@@ -54,6 +55,7 @@ class NotificationService {
         // Save token to Supabase
         await this.saveTokenToSupabase(this.expoPushToken);
       } else {
+        console.log('Not running on a device, skipping push token');
       }
 
       // Set up notification listeners
@@ -70,8 +72,12 @@ class NotificationService {
   // Save push token to Supabase
   async saveTokenToSupabase(token) {
     try {
+      console.log('Saving push token to Supabase:', token);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        console.log('No user found, skipping token save');
+        return;
+      }
 
       // First, check if this token already exists for this user
       const { data: existingToken } = await supabase
@@ -110,6 +116,7 @@ class NotificationService {
         if (error) {
           console.error('Error saving push token to Supabase:', error);
         } else {
+          console.log('Push token saved to Supabase successfully');
         }
       }
     } catch (error) {

@@ -25,12 +25,17 @@ export const UnreadProvider = ({ children }) => {
   // Add this new function to handle unread count updates
   const updateUnreadCount = useCallback(async () => {
     try {
+      console.log('UnreadContext: updateUnreadCount called, isAuthenticated:', isAuthenticated);
+      
       if (!isAuthenticated) {
+        console.log('UnreadContext: Not authenticated, setting count to 0');
         setTotalUnreadConversations(0);
         return;
       }
 
+      console.log('UnreadContext: Calling getTotalUnreadConversations...');
       const count = await getTotalUnreadConversations();
+      console.log('UnreadContext: Got count:', count);
       setTotalUnreadConversations(count);
     } catch (error) {
       logger.error('Error updating unread count:', error);
@@ -56,7 +61,11 @@ export const UnreadProvider = ({ children }) => {
           updateUnreadCount();
         }
       )
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error('UnreadContext channel error:', error);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -131,7 +140,11 @@ export const UnreadProvider = ({ children }) => {
           updateUnreadCount();
         }
       })
-      .subscribe();
+      .subscribe((status, error) => {
+        if (error) {
+          console.error('UnreadContext messages channel error:', error);
+        }
+      });
 
     initialize();
 

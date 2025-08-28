@@ -210,7 +210,7 @@ i18n
                     todayAt: "Today at {{time}}",
                     yesterdayAt: "Yesterday at {{time}}",
                     lookingFor: "Looking For",
-                    lookingForProduct: "Looking For Product",
+                    lookingForProduct: "Looking For",
                     loadingProducts: "Loading products...",
                     errorLoadingProducts: "Could not load products. Please try again.",
                     networkError: "No internet connection",

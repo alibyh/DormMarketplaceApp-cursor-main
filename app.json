@@ -16,7 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.alibyh.DormMarketplaceApp",
-      "buildNumber": "5",
+      "buildNumber": "9",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Your location is used to deliver relevant ads.",
         "NSLocationAlwaysUsageDescription": "Your location is used to deliver relevant ads.",

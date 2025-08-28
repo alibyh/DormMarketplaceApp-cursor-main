@@ -45,6 +45,8 @@ function MainTabNavigator() {
   const { totalUnreadConversations } = useContext(UnreadContext);
   const { getThemeColors } = useTheme();
   const colors = getThemeColors();
+  
+  console.log('MainTabNavigator: totalUnreadConversations:', totalUnreadConversations);
 
   return (
     <Tab.Navigator

@@ -194,12 +194,12 @@ const AboutUsModal = ({ visible, onClose }) => {
                 
                 <View style={styles.featuresList}>
                   {[
-                    { icon: 'storefront', text: 'Buy and sell items within your dorm community' },
-                    { icon: 'search', text: 'Find exactly what you need with smart filtering' },
-                    { icon: 'chatbubbles', text: 'Connect with sellers through secure messaging' },
-                    { icon: 'shield-checkmark', text: 'Safe and verified student marketplace' },
-                    { icon: 'location', text: 'Dorm-based filtering for local convenience' },
-                    { icon: 'heart', text: 'Build community connections on campus' },
+                    { icon: 'storefront', text: t('featureBuySell') },
+                    { icon: 'search', text: t('featureSmartFilter') },
+                    { icon: 'chatbubbles', text: t('featureSecureMessaging') },
+                    { icon: 'shield-checkmark', text: t('featureSafeMarketplace') },
+                    { icon: 'location', text: t('featureDormFilter') },
+                    { icon: 'heart', text: t('featureCommunity') },
                   ].map((feature, index) => (
                     <Animated.View
                       key={index}

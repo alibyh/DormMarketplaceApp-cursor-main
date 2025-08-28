@@ -45,6 +45,14 @@ const sendPushNotificationForMessage = async (conversationId, senderId, messageC
 
     // Call the Supabase Edge Function to send push notification
     try {
+      logger.info('Attempting to send push notification to user:', otherUserId);
+      
+      // Check if we're connected to Supabase
+      if (!supabase.functions) {
+        logger.error('Supabase functions not available');
+        return;
+      }
+      
       const { data, error } = await supabase.functions.invoke('send-push-notification', {
         body: {
           targetUserId: otherUserId,
@@ -61,12 +69,23 @@ const sendPushNotificationForMessage = async (conversationId, senderId, messageC
 
       if (error) {
         logger.error('Error calling push notification function:', error);
-        return;
+        logger.error('Error details:', {
+          message: error.message,
+          status: error.status,
+          statusText: error.statusText,
+          details: error.details
+        });
+        // Don't return here - let the function continue
+      } else {
+        logger.info('Push notification sent successfully:', data);
       }
-
-      logger.info('Push notification sent successfully:', data);
     } catch (functionError) {
       logger.error('Edge function not available or failed:', functionError);
+      logger.error('Function error details:', {
+        message: functionError.message,
+        name: functionError.name,
+        stack: functionError.stack
+      });
       // Don't fail the message send if notification fails
       return;
     }
@@ -1191,22 +1210,59 @@ const getUnreadCountForConversation = async (conversationId) => {
 export const getTotalUnreadConversations = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return 0;
+    if (!user) {
+      console.log('getTotalUnreadConversations: No user found');
+      return 0;
+    }
 
+    console.log('getTotalUnreadConversations: Checking for user:', user.id);
+
+    // First, get all conversations where the user is a participant
+    const { data: userConversations, error: convError } = await supabase
+      .from('conversations')
+      .select('conversation_id')
+      .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id},participant_ids.cs.{${user.id}}`);
+
+    if (convError) {
+      console.error('Error getting user conversations:', convError);
+      return 0;
+    }
+
+    if (!userConversations || userConversations.length === 0) {
+      console.log('getTotalUnreadConversations: User has no conversations');
+      return 0;
+    }
+
+    const userConversationIds = userConversations.map(c => c.conversation_id);
+    console.log('getTotalUnreadConversations: User conversation IDs:', userConversationIds);
+
+    // Now get unread messages only for conversations where the user is a participant
     const { data: messages, error } = await supabase
       .from('messages')
       .select('conversation_id')
       .neq('sender_id', user.id)
-      .not('read_by', 'cs', `{${user.id}}`);
+      .not('read_by', 'cs', `{${user.id}}`)
+      .in('conversation_id', userConversationIds);
 
     if (error) {
       console.error('Error getting unread conversations:', error);
       return 0;
     }
 
-    // Get unique conversation IDs
-    const unreadConversations = new Set(messages.map(m => m.conversation_id));
-    return unreadConversations.size;
+    console.log('getTotalUnreadConversations: Found messages:', messages?.length || 0);
+
+    if (!messages || messages.length === 0) {
+      console.log('getTotalUnreadConversations: No unread messages found');
+      return 0;
+    }
+
+    // Get unique conversation IDs from unread messages
+    const unreadConversationIds = [...new Set(messages.map(m => m.conversation_id))];
+    console.log('getTotalUnreadConversations: Unread conversation IDs:', unreadConversationIds);
+
+    const result = unreadConversationIds.length;
+    console.log('getTotalUnreadConversations: Final result:', result);
+    return result;
 
   } catch (error) {
     console.error('Error in getTotalUnreadConversations:', error);

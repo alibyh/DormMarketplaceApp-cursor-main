@@ -13,7 +13,6 @@ import {
   ActivityIndicator
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../context/ThemeContext';
@@ -226,23 +225,15 @@ const SignUpScreen = ({ navigation }) => {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.8,
+        quality: 0.7,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const selectedImage = result.assets[0];
         
-        // Immediately resize the image using ImageManipulator
-        const manipResult = await ImageManipulator.manipulateAsync(
-          selectedImage.uri,
-          [{ resize: { width: 400, height: 400 } }],
-          { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
-        );
-        
-        
-        // Set the RESIZED image
-        setProfilePhotoPreview(manipResult.uri);
-        updateFormData('profilePhoto', manipResult.uri);
+        // Set the preview immediately (same as UpdateProfileScreen)
+        setProfilePhotoPreview(selectedImage.uri);
+        updateFormData('profilePhoto', selectedImage.uri);
       }
     } catch (error) {
       console.error('Image processing error:', error);
@@ -325,10 +316,9 @@ const SignUpScreen = ({ navigation }) => {
       let avatarUrl = null;
       if (formData.profilePhoto) {
         console.log('Uploading profile photo...');
-        const photoFileName = `${userId}_${Date.now()}.jpg`;
         
         try {
-          // Convert image to binary data using the same method as UpdateProfileScreen
+          // Convert the image to binary data using the same method as UpdateProfileScreen
           const fetchResponse = await fetch(formData.profilePhoto);
           if (!fetchResponse.ok) {
             throw new Error('Failed to fetch image');
@@ -336,10 +326,11 @@ const SignUpScreen = ({ navigation }) => {
           
           const arrayBuffer = await fetchResponse.arrayBuffer();
           const uint8Array = new Uint8Array(arrayBuffer);
-          
+
+          const fileName = `${userId}_${Date.now()}.jpg`;
           const { error: uploadError } = await supabase.storage
             .from('avatars')
-            .upload(photoFileName, uint8Array, {
+            .upload(fileName, uint8Array, {
               contentType: 'image/jpeg',
               upsert: true
             });
@@ -351,7 +342,7 @@ const SignUpScreen = ({ navigation }) => {
             // Get the public URL for the uploaded avatar
             const { data: urlData } = supabase.storage
               .from('avatars')
-              .getPublicUrl(photoFileName);
+              .getPublicUrl(fileName);
             
             if (urlData && urlData.publicUrl) {
               avatarUrl = urlData.publicUrl;
